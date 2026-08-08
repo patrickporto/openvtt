@@ -1,3 +1,0 @@
-$ tsup
-[31mCannot find src/index.ts[39m
-error: script "build" exited with code 1
