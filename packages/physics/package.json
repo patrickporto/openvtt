@@ -1,0 +1,41 @@
+{
+  "name": "@openvtt/physics",
+  "version": "0.1.0",
+  "description": "Rigid-body physics (cannon-es) for OpenVTT, with Web Worker host and main-thread fallback.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./worker": {
+      "types": "./dist/physics.worker.d.ts",
+      "import": "./dist/physics.worker.js"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "cannon-es": "^0.20.0"
+  },
+  "devDependencies": {
+    "cannon-es": "^0.20.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["openvtt", "physics", "cannon-es", "web-worker", "vtt"]
+}
