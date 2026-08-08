@@ -1,0 +1,39 @@
+{
+  "name": "@openvtt/events",
+  "version": "0.1.0",
+  "description": "Mature, schema-validated event & hook bus for OpenVTT — cross-VTT interoperability and browser-extension friendly.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "mitt": "^3.0.1",
+    "tapable": "^2.3.3",
+    "uuid": "^11.1.1",
+    "valibot": "^1.4.2"
+  },
+  "devDependencies": {
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["openvtt", "events", "hooks", "vtt", "eventemitter", "pubsub"]
+}
