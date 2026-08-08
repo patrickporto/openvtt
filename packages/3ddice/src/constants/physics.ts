@@ -1,0 +1,10 @@
+export const PHYSICS = {
+    GRAVITY_MULTIPLIER: -9.8,
+    SOLVER_ITERATIONS: 14,
+    LINEAR_DAMPING: 0.1,
+    ANGULAR_DAMPING: 0.1,
+    SLEEP_SPEED_LIMIT: 75,
+    SLEEP_TIME_LIMIT: 0.9,
+    REROLL_VELOCITY: { x: 0, y: 0, z: 3000 },
+    REROLL_ANGULAR: { x: 25, y: 25, z: 25 }
+} as const;

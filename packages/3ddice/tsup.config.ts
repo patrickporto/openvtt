@@ -6,4 +6,5 @@ export default defineConfig({
   dts: true,
   sourcemap: true,
   clean: true,
+  external: ['three', 'cannon-es', 'valibot', '@openvtt/events', '@openvtt/physics', '@openvtt/render3d'],
 });

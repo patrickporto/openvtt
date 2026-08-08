@@ -1,7 +1,9 @@
 {
   "name": "@openvtt/dice",
-  "version": "0.0.1",
+  "version": "0.1.0",
+  "description": "Framework-agnostic 3D dice roller for OpenVTT (three.js + cannon-es worker physics).",
   "type": "module",
+  "license": "MIT",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -13,14 +15,33 @@
     }
   },
   "files": ["dist"],
+  "sideEffects": false,
   "scripts": {
     "build": "tsup",
+    "dev": "tsup --watch",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@openvtt/events": "workspace:*",
+    "@openvtt/physics": "workspace:*",
+    "@openvtt/render3d": "workspace:*",
+    "valibot": "^1.4.2"
+  },
+  "peerDependencies": {
+    "cannon-es": "^0.20.0",
+    "three": "^0.182.0"
   },
   "devDependencies": {
-    "tsup": "^8.4.0"
-  }
+    "@types/three": "^0.182.0",
+    "cannon-es": "^0.20.0",
+    "three": "^0.182.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.0",
+    "valibot": "^1.4.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["openvtt", "dice", "3d", "vtt", "three.js", "cannon-es"]
 }
