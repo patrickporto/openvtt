@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import type { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 
+import type { DiceMesh, DiceResult } from '../services/dice-mesh';
+
 export interface SelectionDeps {
   getDice: () => THREE.Object3D[];
   getCamera: () => THREE.Camera | undefined;
   getOutlinePass: () => OutlinePass | undefined;
   requestRender: () => void;
-  onDieClick: (id: number, value: any) => void;
+  onDieClick: (id: number, value: DiceResult | undefined) => void;
 }
 
 export class SelectionController {
@@ -74,7 +76,7 @@ export class SelectionController {
     if (!target) return;
 
     const id = dice.indexOf(target);
-    const value = (target as any).getLastValue?.();
+    const value = (target as Partial<DiceMesh>).getLastValue?.();
     this.deps.onDieClick(id, value);
   }
 }

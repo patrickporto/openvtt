@@ -1,14 +1,14 @@
 import type { CollideEvent } from '@openvtt/physics';
 import { ANIMATION } from '../constants/animation';
 
-const SURFACE_COUNTS: Record<string, number> = {
+export const SURFACE_COUNTS: Record<string, number> = {
   felt: 7,
   wood_table: 7,
   wood_tray: 7,
   metal: 9,
 };
 
-const DIE_MATERIAL_COUNTS: Record<string, number> = {
+export const DIE_MATERIAL_COUNTS: Record<string, number> = {
   coin: 6,
   metal: 12,
   plastic: 15,
@@ -20,6 +20,7 @@ export class SoundManager {
   dieMaterial = 'plastic';
   enabled = false;
   volume = 100;
+  resolver: (url: string) => string = (url) => url;
 
   #assetPath: string;
   #table = new Map<string, HTMLAudioElement[]>();
@@ -38,8 +39,7 @@ export class SoundManager {
 
   resolveDieMaterial(textureMaterial?: string): string {
     const match = textureMaterial?.match(/wood|metal/g);
-    this.dieMaterial = match ? textureMaterial! : 'plastic';
-    return this.dieMaterial;
+    return match ? textureMaterial! : 'plastic';
   }
 
   async load(): Promise<void> {
@@ -49,7 +49,7 @@ export class SoundManager {
         this.surface,
         await Promise.all(
           Array.from({ length: count }, (_, i) =>
-            this.loadAudio(`${this.#assetPath}sounds/surfaces/surface_${this.surface}${i + 1}.mp3`)
+            this.loadAudio(this.resolver(`${this.#assetPath}sounds/surfaces/surface_${this.surface}${i + 1}.mp3`))
           )
         )
       );
@@ -62,7 +62,7 @@ export class SoundManager {
         material,
         await Promise.all(
           Array.from({ length: count }, (_, i) =>
-            this.loadAudio(`${this.#assetPath}sounds/dicehit/dicehit_${material}${i + 1}.mp3`)
+            this.loadAudio(this.resolver(`${this.#assetPath}sounds/dicehit/dicehit_${material}${i + 1}.mp3`))
           )
         )
       );

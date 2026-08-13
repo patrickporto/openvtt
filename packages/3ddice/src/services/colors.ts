@@ -1,10 +1,12 @@
 import type { TextureEntry } from '../constants/texturelist';
 import type { DiceTheme } from '../constants/themes';
-import { getTheme, getTexture } from '../registries';
+import { defaultRegistries, type DiceRegistries } from '../registries';
 import { resolveAssetPath } from '@openvtt/render3d';
 
 interface DiceColorsOptions {
   assetPath?: string;
+  resolver?: (url: string) => string;
+  registries?: DiceRegistries;
 }
 
 interface ColorSetOptions {
@@ -22,20 +24,38 @@ interface TextureData {
   material?: string;
 }
 
-interface ColorSet {
+export interface ColorSet {
   name: string;
+  foreground: string | string[];
+  background: string | string[];
+  outline?: string | string[];
   texture: TextureData;
   material?: string;
   labels?: Record<string, any[]>;
   [key: string]: any; // Allow other colorset props
 }
 
+function colorSetCacheKey(options: Record<string, unknown>): string {
+  const json = JSON.stringify(options, (_key, value) =>
+    value instanceof HTMLImageElement ? value.src : value
+  );
+  let hash = 5381;
+  for (let i = 0; i < json.length; i++) {
+    hash = ((hash << 5) + hash + json.charCodeAt(i)) | 0;
+  }
+  return `custom-${(hash >>> 0).toString(36)}`;
+}
+
 export class DiceColors {
   #colorsets: Map<string, ColorSet> = new Map();
   #assetPath?: string;
+  #resolver: (url: string) => string;
+  #registries: DiceRegistries;
 
   constructor(options: DiceColorsOptions = {}) {
     this.#assetPath = options.assetPath;
+    this.#resolver = options.resolver ?? ((url) => url);
+    this.#registries = options.registries ?? defaultRegistries;
   }
 
   async #loadImage(src: string): Promise<HTMLImageElement> {
@@ -47,7 +67,7 @@ export class DiceColors {
         reject(new Error('Image loading failed'));
       };
       img.crossOrigin = 'anonymous';
-      img.src = resolveAssetPath(this.#assetPath, src);
+      img.src = this.#resolver(resolveAssetPath(this.#assetPath, src));
     });
   }
 
@@ -66,20 +86,20 @@ export class DiceColors {
   }
 
   #getTexture(textureName: string | string[]): TextureEntry {
-    return getTexture(textureName) ?? getTexture('none')!;
+    return this.#registries.getTexture(textureName) ?? this.#registries.getTexture('none')!;
   }
 
   async getColorSet(options: string | ColorSetOptions): Promise<ColorSet> {
     const setName = typeof options === 'string' ? options : options?.colorset;
 
-    const theme = getTheme(setName || 'default')!;
+    const theme = this.#registries.getTheme(setName || 'default')!;
     // Use theme.dice as the base colorset
     const baseColorset = theme.dice;
 
     const colorset: ColorSet = {
       name: theme.name,
       ...baseColorset,
-      texture: { ...getTexture('none')! }
+      texture: { ...this.#registries.getTexture('none')! }
     };
 
     // Get texture name from options or use the base colorset's texture source
@@ -121,7 +141,7 @@ export class DiceColors {
     themeName: string,
     diceType: 'd20' | 'boon' | 'bane' | 'default'
   ): Promise<ColorSet> {
-    const theme = getTheme(themeName)!;
+    const theme = this.#registries.getTheme(themeName)!;
 
     // Get base colorset
     const baseColorset = { ...theme.dice };
@@ -135,7 +155,7 @@ export class DiceColors {
     const colorset: ColorSet = {
       name: `${theme.name}-${diceType}`,
       ...baseColorset,
-      texture: { ...getTexture('none')! }
+      texture: { ...this.#registries.getTexture('none')! }
     };
 
     // Get and load texture data
@@ -159,7 +179,7 @@ export class DiceColors {
 
   async makeColorSet(options: any = {}): Promise<ColorSet> {
     // Generate a unique name since custom colorsets don't have named IDs
-    const customName = options.name ?? Date.now().toString();
+    const customName = options.name ?? colorSetCacheKey(options as Record<string, unknown>);
 
     if (this.#colorsets.has(customName)) {
       return this.#colorsets.get(customName)!;

@@ -7,17 +7,70 @@ export {
   validateOptions,
 } from './box/config';
 export type { DiceBoxOptions, NormalizedConfig, QueueMode, ShadowQuality } from './box/config';
+export type { DiceBoxDeps } from './box/deps';
 export { RollQueue } from './box/roll-queue';
 export { SoundManager } from './box/sounds';
 export { SelectionController } from './box/selection';
 export type { SelectionDeps } from './box/selection';
+export { SceneRenderer } from './box/scene-renderer';
+export type { EnvironmentRequest, SceneRendererInitOptions } from './box/scene-renderer';
+export { LayoutController } from './box/layout';
+export type { LayoutControllerDeps } from './box/layout';
+export { PhysicsController } from './box/physics-controller';
+export type { PhysicsControllerOptions } from './box/physics-controller';
+export { DiceSpawner } from './box/spawner';
+export type { DiceSpawnerDeps } from './box/spawner';
+export { ThrowPlanner } from './box/throw-planner';
+export type { ThrowPlannerDeps } from './box/throw-planner';
+export { RollOrchestrator } from './box/roll-orchestrator';
+export type { AnimState, RollOrchestratorDeps, RollTimingConfig, SelectorDie } from './box/roll-orchestrator';
+export type { CameraHeights, DisplayConfig, Vector2D } from './box/types';
 
 export { DiceNotation } from './services/notation';
+export {
+  CanonicalNotationParser,
+  LegacyNotationParser,
+  createDefaultNotationParser,
+  mergeParsedNotation,
+  rollExprToParsedNotation,
+} from './services/notation';
+export type { DiceSet, NotationObject, NotationParser, ParsedNotation } from './services/notation';
 export { DicePreset } from './services/preset';
+export { DicePresetRegistry, createDefaultPresetRegistry } from './services/preset-registry';
 export { DiceColors } from './services/colors';
+export type { ColorSet } from './services/colors';
 export { DiceFactory } from './services/factory';
+export type { DiceFactoryConfig, DiceFactoryDeps } from './services/factory';
+export { DiceAssetLoaders } from './services/loaders';
+export type { DiceLoadersOptions } from './services/loaders';
+export { swapDiceFace, swapDiceFaceD4 } from './services/face-swap';
+export type { FaceSwapDeps } from './services/face-swap';
+export {
+  BODY_SLEEP_STATE,
+  BODY_TYPE_DYNAMIC,
+  BODY_TYPE_KINEMATIC,
+  createDiceMesh,
+  createDiceMeshFromModel,
+  createDieBodyState,
+  createEmptyThrowVector,
+} from './services/dice-mesh';
+export type {
+  DiceColorData,
+  DiceMaterial,
+  DiceMesh,
+  DiceMeshBehavior,
+  DiceObject,
+  DiceResult,
+  DiceSetStyle,
+  DiceValues,
+  DieBodyState,
+  ThrowVector,
+} from './services/dice-mesh';
 
 export {
+  DiceRegistries,
+  createDiceRegistries,
+  defaultRegistries,
   registerTheme,
   getTheme,
   hasTheme,
@@ -30,12 +83,18 @@ export {
   listMaterials,
   registerDiceModel,
   getDiceModel,
+  listDiceModels,
 } from './registries';
-export type { DiceModelRegistration } from './registries';
+export type { DiceModelRegistration, DiceRegistriesSeeds } from './registries';
 
 export { DiceError, RollCancelledError, AssetLoadError } from './errors';
 export { createDiceBus, diceContract, DieResultSchema, RollResultSchema, RerollContextSchema } from './bus';
 export type { DiceBus, DiceBusEvents, RerollContext } from './bus';
+export { buildDiceManifest } from './assets';
+export type { DieResult, RollResult } from './results';
+
+export { AssetManager } from '@openvtt/assets';
+export type { AssetEntry, AssetManifest, AssetType, AssetsBus, StorageAdapter } from '@openvtt/assets';
 
 export { createPhysicsHost } from '@openvtt/physics';
 export type {
@@ -64,26 +123,3 @@ export { MATERIALS } from './constants/materials';
 export { CAMERA } from './constants/camera';
 export { POSITION } from './constants/position';
 export { ANIMATION } from './constants/animation';
-
-export interface DieResult {
-  type: string;
-  sides: number;
-  id: number;
-  value: number;
-  label: string;
-  reason: string;
-}
-
-export interface RollResult {
-  id: string;
-  notation: string;
-  sets: Array<{
-    num: number;
-    type: string;
-    sides: number;
-    rolls: DieResult[];
-    total: number;
-  }>;
-  modifier: number;
-  total: number;
-}

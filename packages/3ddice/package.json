@@ -23,6 +23,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@openvtt/assets": "workspace:*",
+    "@openvtt/dice-core": "workspace:*",
+    "@openvtt/dice-notation": "workspace:*",
     "@openvtt/events": "workspace:*",
     "@openvtt/physics": "workspace:*",
     "@openvtt/render3d": "workspace:*",

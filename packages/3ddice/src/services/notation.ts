@@ -1,4 +1,9 @@
-interface DiceSet {
+import { fromFormula } from '@openvtt/dice-notation';
+import type { FacesSpec, RollExpr } from '@openvtt/dice-core';
+
+import type { DiceSetStyle, ThrowVector } from './dice-mesh';
+
+export interface DiceSet {
   num: number;
   type: string;
   sid: number;
@@ -7,22 +12,56 @@ interface DiceSet {
   func?: string;
   args?: string | string[];
   op?: string;
-  /** Style variant: 'boon', 'bane', 'd20', or undefined for default */
-  style?: 'boon' | 'bane' | 'd20' | 'default';
+  style?: DiceSetStyle;
 }
 
-interface NotationObject {
+export interface NotationObject {
   notation: string;
-  constant?: number;
-  vectors?: any[];
+  constant?: number | null;
+  op?: string;
+  boost?: number;
+  result?: string[];
+  error?: boolean;
+  vectors?: ThrowVector[];
   set: DiceSet[];
+}
+
+export interface ParsedNotation {
+  notation: string;
+  constant: number | null;
+  op: string;
+  boost: number;
+  result: string[];
+  error: boolean;
+  vectors: ThrowVector[];
+  set: DiceSet[];
+}
+
+export interface NotationParser {
+  parse(notation: string): ParsedNotation;
+  merge(prev: ParsedNotation, next: ParsedNotation): ParsedNotation;
+}
+
+export function mergeParsedNotation(prevNotation: NotationObject, newNotation: NotationObject): ParsedNotation {
+  return {
+    notation: `${prevNotation.notation}+${newNotation.notation}`,
+    constant: (prevNotation.constant ?? 0) + (newNotation.constant ?? 0),
+    op: prevNotation.op ?? '',
+    boost: prevNotation.boost ?? 1,
+    result: prevNotation.result ? [...prevNotation.result] : [],
+    error: prevNotation.error ?? false,
+    set: [...prevNotation.set, ...newNotation.set],
+    vectors: [
+      ...(prevNotation.vectors || []),
+      ...(newNotation.vectors || []),
+    ],
+  };
 }
 
 export class DiceNotation {
   #set: DiceSet[] = [];
   #setkeys = new Map<string, number>();
   #setid = 0;
-  #groups: any[] = [];
   #totalDice = 0;
   #op = '';
   #constant: number | null = null;
@@ -30,7 +69,7 @@ export class DiceNotation {
   #error = false;
   #boost = 1;
   #notation = '';
-  #vectors = [];
+  #vectors: ThrowVector[] = [];
 
   constructor(notation: string | NotationObject) {
     if (typeof notation === 'object') {
@@ -99,9 +138,9 @@ export class DiceNotation {
     const initialOp = this.#notation.length > 0 ? '+' : '';
     this.#notation = this.#notation + initialOp + notation;
 
-    let [notationString, forcedResults] = notation.split('@');
+    const [notationPart, forcedResults] = notation.split('@');
+    let notationString = notationPart;
 
-    // Updated regex to capture style brackets like [boon] or [bane]
     const rollRegex =
       /(\+|\-|\*|\/|\%|\^|){0,1}()(\d*)([a-z]+\d+|[a-z]+|)(?:\[(\w+)\])?(?:\{([a-z]+)(.*?|)\}|)()/i;
     const resultsRegex = /(\b)*(\-\d+|\d+)(\b)*/gi;
@@ -117,7 +156,7 @@ export class DiceNotation {
 
       runs++;
 
-      let [
+      const [
         fullMatch,
         operator,
         groupStart,
@@ -140,10 +179,8 @@ export class DiceNotation {
 
       const parsedFuncArgs = funcargs.split(',').slice(1);
 
-      // Parse style from bracket notation
-      const style = styleMatch?.toLowerCase() as 'boon' | 'bane' | 'd20' | 'default' | undefined;
+      const style = styleMatch?.toLowerCase() as DiceSetStyle | undefined;
 
-      // Handle single operator and constant case
       if (
         runs === 1 &&
         notationString.length === 0 &&
@@ -163,17 +200,12 @@ export class DiceNotation {
           operator,
           'd20'
         );
-      }
-      // Handle ending operator + constant case
-      else if (runs > 1 && notationString.length === 0 && !type) {
+      } else if (runs > 1 && notationString.length === 0 && !type) {
         this.#op = operator;
         this.#constant = parseInt(amount, 10);
         addSet = false;
-      }
-      // Normal case
-      else if (addSet) {
-        // Auto-detect d20 style
-        const effectiveStyle = type === 'd20' ? 'd20' : style;
+      } else if (addSet) {
+        const effectiveStyle: DiceSetStyle | undefined = type === 'd20' ? 'd20' : style;
 
         this.addSet(
           amount,
@@ -193,7 +225,6 @@ export class DiceNotation {
       }
     }
 
-    // Handle forced results
     if (!this.#error && forcedResults) {
       const results = forcedResults.match(resultsRegex);
       if (results) {
@@ -234,20 +265,20 @@ export class DiceNotation {
     funcname = '',
     funcargs: string | string[] = '',
     operator = '+',
-    style?: 'boon' | 'bane' | 'd20' | 'default'
+    style?: DiceSetStyle
   ): void {
-    amount = Math.abs(parseInt(amount.toString() || '1', 10));
-    if (amount === 0) return;
+    const parsedAmount = Math.abs(parseInt(amount.toString() || '1', 10));
+    if (parsedAmount === 0) return;
 
     const setKey = `${operator}${type}${groupID}${groupLevel}${funcname}${funcargs}${style || ''}`;
     const existingSetIndex = this.#setkeys.get(setKey);
 
     if (existingSetIndex !== undefined) {
       const existingSet = this.#set[existingSetIndex];
-      existingSet.num += amount;
+      existingSet.num += parsedAmount;
     } else {
       const newSet: DiceSet = {
-        num: amount,
+        num: parsedAmount,
         type,
         sid: this.#setid,
         gid: groupID,
@@ -264,16 +295,148 @@ export class DiceNotation {
     }
   }
 
-  static mergeNotation(prevNotation: NotationObject, newNotation: NotationObject): NotationObject {
+  static mergeNotation(prevNotation: NotationObject, newNotation: NotationObject): ParsedNotation {
+    return mergeParsedNotation(prevNotation, newNotation);
+  }
+}
+
+export class LegacyNotationParser implements NotationParser {
+  parse(notation: string): ParsedNotation {
+    const legacy = new DiceNotation(notation);
     return {
-      ...prevNotation,
-      constant: (prevNotation.constant ?? 0) + (newNotation.constant ?? 0),
-      notation: `${prevNotation.notation}+${newNotation.notation}`,
-      set: [...prevNotation.set, ...newNotation.set],
-      vectors: [
-        ...(prevNotation.vectors || []),
-        ...(newNotation.vectors || []),
-      ],
+      notation: legacy.notation,
+      constant: legacy.constant,
+      op: legacy.op,
+      boost: legacy.boost,
+      result: legacy.result,
+      error: legacy.error,
+      vectors: legacy.vectors,
+      set: legacy.set,
     };
   }
+
+  merge(prev: ParsedNotation, next: ParsedNotation): ParsedNotation {
+    return mergeParsedNotation(prev, next);
+  }
+}
+
+interface CanonicalSet {
+  num: number;
+  type: string;
+  op: string;
+  style?: DiceSetStyle;
+}
+
+function facesToType(faces: FacesSpec): string | null {
+  switch (faces.kind) {
+    case 'number':
+      return `d${faces.value}`;
+    case 'percentile':
+      return 'd100';
+    case 'coin':
+      return 'd2';
+    default:
+      return null;
+  }
+}
+
+export function rollExprToParsedNotation(expr: RollExpr, source: string): ParsedNotation | null {
+  const sets: CanonicalSet[] = [];
+  let constant: number | null = null;
+  let constantOp = '+';
+
+  const visit = (node: RollExpr, op: string, isFirst: boolean, isLast: boolean): boolean => {
+    if (typeof node === 'number') {
+      if (isFirst || !isLast || constant !== null) return false;
+      constant = Math.abs(node);
+      constantOp = node < 0 ? '-' : op;
+      return true;
+    }
+    if (typeof node !== 'object' || node === null) return false;
+
+    if ('+' in node) {
+      const [left, right] = node['+'];
+      return visit(left, op, isFirst, false) && visit(right, '+', false, isLast);
+    }
+    if ('-' in node) {
+      const args = node['-'];
+      if (args.length !== 2) return false;
+      const [left, right] = args;
+      return visit(left, op, isFirst, false) && visit(right, '-', false, isLast);
+    }
+
+    if (!('type' in node) || node.type !== 'die') return false;
+    if (node.modifiers?.length) return false;
+    if (typeof node.count !== 'number' || !Number.isInteger(node.count) || node.count === 0) return false;
+
+    const type = facesToType(node.faces);
+    if (!type) return false;
+
+    sets.push({
+      num: Math.abs(node.count),
+      type,
+      op,
+      style: type === 'd20' ? 'd20' : undefined,
+    });
+    return true;
+  };
+
+  if (!visit(expr, '', true, true)) return null;
+  if (sets.length === 0) return null;
+
+  const diceSets: DiceSet[] = [];
+  const setKeys = new Map<string, number>();
+
+  for (const term of sets) {
+    const setKey = `${term.op}${term.type}00${term.style || ''}`;
+    const existingIndex = setKeys.get(setKey);
+    if (existingIndex !== undefined) {
+      diceSets[existingIndex].num += term.num;
+    } else {
+      setKeys.set(setKey, diceSets.length);
+      diceSets.push({
+        num: term.num,
+        type: term.type,
+        sid: diceSets.length,
+        gid: 0,
+        glvl: 0,
+        ...(term.op && { op: term.op }),
+        ...(term.style && { style: term.style }),
+      });
+    }
+  }
+
+  return {
+    notation: source,
+    constant,
+    op: constant === null ? '' : constantOp,
+    boost: 1,
+    result: [],
+    error: false,
+    vectors: [],
+    set: diceSets,
+  };
+}
+
+export class CanonicalNotationParser implements NotationParser {
+  constructor(private fallback: NotationParser = new LegacyNotationParser()) {}
+
+  parse(notation: string): ParsedNotation {
+    try {
+      const expr = fromFormula(notation);
+      const parsed = rollExprToParsedNotation(expr, notation);
+      if (parsed) return parsed;
+    } catch {
+      return this.fallback.parse(notation);
+    }
+    return this.fallback.parse(notation);
+  }
+
+  merge(prev: ParsedNotation, next: ParsedNotation): ParsedNotation {
+    return mergeParsedNotation(prev, next);
+  }
+}
+
+export function createDefaultNotationParser(): NotationParser {
+  return new CanonicalNotationParser(new LegacyNotationParser());
 }

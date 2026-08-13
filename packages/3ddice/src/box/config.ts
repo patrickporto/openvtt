@@ -1,8 +1,17 @@
 import * as v from 'valibot';
 import type { AntialiasMode, EnvironmentSpec, PostFXOptions } from '@openvtt/render3d';
+import type { AssetManager } from '@openvtt/assets';
+
+import type { DiceBoxDeps } from './deps';
 
 export type ShadowQuality = 'none' | 'low' | 'medium' | 'high';
 export type QueueMode = 'serial' | 'replace' | 'parallel';
+
+export interface DiceAssetsOptions {
+  manager?: AssetManager;
+  preload?: boolean;
+  includeLazy?: boolean;
+}
 
 export const SHADOW_MAP_SIZES: Record<Exclude<ShadowQuality, 'none'>, number> = {
   low: 1024,
@@ -59,6 +68,8 @@ export interface DiceBoxOptions {
   sound_dieMaterial?: string;
   scale?: number;
   onRollComplete?: () => void;
+  assets?: DiceAssetsOptions;
+  deps?: DiceBoxDeps;
 }
 
 export interface NormalizedConfig {
@@ -90,6 +101,7 @@ export interface NormalizedConfig {
   dracoPath?: string;
   colorSpotlight: number;
   soundDieMaterial: string;
+  assets?: DiceAssetsOptions;
 }
 
 const AntialiasSchema = v.picklist(['none', 'msaa', 'smaa']);
@@ -193,6 +205,7 @@ export function normalizeOptions(rawOptions: DiceBoxOptions): NormalizedConfig {
     dracoPath: options.dracoPath,
     colorSpotlight: pick(options.colorSpotlight, options.color_spotlight, 'color_spotlight', 'colorSpotlight') ?? 0xefdfd5,
     soundDieMaterial: options.sound_dieMaterial ?? 'plastic',
+    assets: options.assets,
   };
 }
 
@@ -226,5 +239,6 @@ export function configToOptions(c: NormalizedConfig): DiceBoxOptions {
     dracoPath: c.dracoPath,
     colorSpotlight: c.colorSpotlight,
     sound_dieMaterial: c.soundDieMaterial,
+    assets: c.assets,
   };
 }
