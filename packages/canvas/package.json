@@ -1,0 +1,49 @@
+{
+  "name": "@openvtt/canvas",
+  "version": "0.1.0",
+  "description": "Framework-agnostic, PixiJS-powered game canvas for OpenVTT — Foundry-inspired Canvas/Layer/PlaceableObject API.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@openvtt/events": "workspace:*",
+    "rbush": "^4.0.1",
+    "uuid": "^11.1.1",
+    "valibot": "^1.4.2"
+  },
+  "peerDependencies": {
+    "pixi-filters": "^6.1.5",
+    "pixi-viewport": "^6.0.3",
+    "pixi.js": "^8.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/rbush": "^4.0.0",
+    "pixi-filters": "^6.1.5",
+    "pixi-viewport": "^6.0.3",
+    "pixi.js": "^8.15.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["openvtt", "canvas", "pixi", "vtt", "tabletop", "scene", "token", "foundry"]
+}
