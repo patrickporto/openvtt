@@ -21,6 +21,61 @@ import type { BridgeOptions, BridgeBusAdapter } from './bridge';
 import { Broadcast } from './broadcast';
 import type { BroadcastOptions, BroadcastMessage } from './broadcast';
 
+export interface NotifyPort {
+  on(name: string, handler: (payload: any, meta: EventMeta) => void): () => void;
+  once(name: string, handler: (payload: any, meta: EventMeta) => void): () => void;
+  off(name: string, handler: (payload: any, meta: EventMeta) => void): void;
+  onAny(handler: (name: string, payload: unknown, meta: EventMeta) => void): () => void;
+  offAny(handler: (name: string, payload: unknown, meta: EventMeta) => void): void;
+  offAll(): void;
+  dispatch(
+    name: string,
+    payload: unknown,
+    meta: EventMeta,
+    onError: (error: unknown, meta: EventMeta) => void,
+  ): void;
+}
+
+export interface HooksPort {
+  register(name: string, def: HookDef): void;
+  has(name: string): boolean;
+  getDef(name: string): HookDef | undefined;
+  list(): string[];
+  tap<T>(name: string, tapName: string, fn: HookTapFn<T>): void;
+  tapPromise<T>(name: string, tapName: string, fn: HookTapPromiseFn<T>): void;
+  tapAsync<T>(
+    name: string,
+    tapName: string,
+    fn: (value: T, callback: (err?: Error | null, result?: T) => void) => void,
+  ): void;
+  intercept(name: string, interceptor: object): void;
+  call<T>(name: string, value: T): T;
+  callAsync<T>(name: string, value: T): Promise<T>;
+  clearAll(): void;
+}
+
+export interface BridgePort {
+  attach(): void;
+  detach(): void;
+  dispatch(name: string, payload: unknown, meta: EventMeta): void;
+}
+
+export interface BroadcastPort {
+  post(
+    name: string,
+    payload: unknown,
+    options: Pick<EmitOptions, 'correlationId' | 'timestamp'>,
+  ): void;
+  close(): void;
+}
+
+export interface BusDeps {
+  notify?: NotifyPort;
+  hooks?: HooksPort;
+  bridge?: BridgePort;
+  broadcast?: BroadcastPort;
+}
+
 export interface BusOptions {
   validate?: ValidationMode;
   unknownEvents?: 'allow' | 'reject';
@@ -28,6 +83,7 @@ export interface BusOptions {
   broadcast?: boolean | BroadcastOptions;
   debug?: boolean | ((...args: unknown[]) => void);
   sourceId?: string;
+  deps?: BusDeps;
 }
 
 export interface BusMiddleware {
@@ -48,10 +104,11 @@ export class EventBus<E extends EventMap = EventMap, H extends HookMap = HookMap
   readonly sourceId: string;
 
   private readonly contract: Contract<E, H>;
-  private readonly notify: NotifyBus<E>;
-  private readonly hooks: HookEngine<H>;
-  private readonly bridge: Bridge | undefined;
-  private readonly broadcast: Broadcast | undefined;
+  private readonly extraEvents = new Map<string, Schema>();
+  private readonly notify: NotifyPort;
+  private readonly hooks: HooksPort;
+  private readonly bridge: BridgePort | undefined;
+  private readonly broadcast: BroadcastPort | undefined;
   private readonly validate: ValidationMode;
   private readonly unknownEvents: 'allow' | 'reject';
   private readonly debug: DebugLogger | undefined;
@@ -67,16 +124,22 @@ export class EventBus<E extends EventMap = EventMap, H extends HookMap = HookMap
     this.unknownEvents = options.unknownEvents ?? 'allow';
     this.debug = resolveDebug(options.debug);
 
-    this.notify = new NotifyBus<E>();
-    this.hooks = new HookEngine<H>(this.contract.hooks);
+    this.notify = options.deps?.notify ?? new NotifyBus<E>();
+    this.hooks = options.deps?.hooks ?? new HookEngine<H>(this.contract.hooks);
 
-    if (options.bridge) {
-      const bridgeOptions = options.bridge === true ? {} : options.bridge;
-      this.bridge = new Bridge(this.createAdapter(), bridgeOptions);
-      this.bridge.attach();
+    const bridge =
+      options.deps?.bridge ??
+      (options.bridge
+        ? new Bridge(this.createAdapter(), options.bridge === true ? {} : options.bridge)
+        : undefined);
+    if (bridge) {
+      this.bridge = bridge;
+      bridge.attach();
     }
 
-    if (options.broadcast) {
+    if (options.deps?.broadcast) {
+      this.broadcast = options.deps.broadcast;
+    } else if (options.broadcast) {
       const broadcastOptions = options.broadcast === true ? {} : options.broadcast;
       this.broadcast = new Broadcast(
         {
@@ -203,17 +266,16 @@ export class EventBus<E extends EventMap = EventMap, H extends HookMap = HookMap
 
   registerEvent(name: string, schema?: Schema): void {
     this.assertNotDestroyed();
-    (this.contract.events as Record<string, Schema>)[name] = schema;
+    this.extraEvents.set(name, schema);
   }
 
   registerHook(name: string, def: HookDef): void {
     this.assertNotDestroyed();
-    (this.contract.hooks as Record<string, HookDef>)[name] = def;
     this.hooks.register(name, def);
   }
 
   hasEvent(name: string): boolean {
-    return name in this.contract.events;
+    return this.extraEvents.has(name) || name in this.contract.events;
   }
 
   hasHook(name: string): boolean {
@@ -221,7 +283,7 @@ export class EventBus<E extends EventMap = EventMap, H extends HookMap = HookMap
   }
 
   eventNames(): string[] {
-    return Object.keys(this.contract.events);
+    return [...new Set([...Object.keys(this.contract.events), ...this.extraEvents.keys()])];
   }
 
   hookNames(): string[] {
@@ -254,10 +316,17 @@ export class EventBus<E extends EventMap = EventMap, H extends HookMap = HookMap
   }
 
   private guardEvent(name: string): Schema {
-    const known = Object.prototype.hasOwnProperty.call(this.contract.events, name);
+    const known =
+      this.extraEvents.has(name) ||
+      Object.prototype.hasOwnProperty.call(this.contract.events, name);
     if (!known && this.unknownEvents === 'reject') {
       throw new UnknownEventError(name);
     }
+    return this.eventSchema(name);
+  }
+
+  private eventSchema(name: string): Schema {
+    if (this.extraEvents.has(name)) return this.extraEvents.get(name);
     return this.contract.events[name];
   }
 
@@ -291,7 +360,7 @@ export class EventBus<E extends EventMap = EventMap, H extends HookMap = HookMap
     };
     const wireName = this.toWireName(message.name);
     const meta = createMeta(message.name, wireName, this.namespace, options);
-    const schema = this.contract.events[message.name];
+    const schema = this.eventSchema(message.name);
     let payload = message.payload;
     if (schema && this.validate !== 'off') {
       const result = validatePayload(schema, message.payload, 'warn', message.name);

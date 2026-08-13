@@ -3,8 +3,13 @@ export {
   createBus,
 } from './bus';
 export type {
+  BridgePort,
+  BroadcastPort,
+  BusDeps,
   BusOptions,
   BusMiddleware,
+  HooksPort,
+  NotifyPort,
 } from './bus';
 
 export {
