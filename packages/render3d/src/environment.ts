@@ -11,12 +11,53 @@ export type EnvironmentSpec =
 
 export interface EnvironmentHandle {
   texture: THREE.Texture;
-  /** true when the consumer owns the texture and must dispose it */
   owned: boolean;
   dispose: () => void;
 }
 
-const cache = new Map<string, EnvironmentHandle>();
+interface CacheEntry {
+  texture: THREE.Texture;
+  refs: number;
+  disposed: boolean;
+}
+
+const cache = new Map<string, Promise<CacheEntry>>();
+
+function retainEntry(cacheKey: string, entry: CacheEntry): EnvironmentHandle {
+  entry.refs++;
+  let released = false;
+  return {
+    texture: entry.texture,
+    owned: false,
+    dispose: () => {
+      if (released) return;
+      released = true;
+      entry.refs--;
+      if (entry.refs === 0 && !entry.disposed) {
+        entry.disposed = true;
+        cache.delete(cacheKey);
+        entry.texture.dispose();
+      }
+    },
+  };
+}
+
+async function acquireCached(
+  cacheKey: string,
+  create: () => Promise<THREE.Texture>
+): Promise<EnvironmentHandle> {
+  let pending = cache.get(cacheKey);
+  if (!pending) {
+    pending = create().then((texture) => ({ texture, refs: 0, disposed: false }));
+    cache.set(cacheKey, pending);
+    pending.catch(() => {
+      if (cache.get(cacheKey) === pending) cache.delete(cacheKey);
+    });
+  }
+  const entry = await pending;
+  if (entry.disposed) return acquireCached(cacheKey, create);
+  return retainEntry(cacheKey, entry);
+}
 
 function proceduralGradient(renderer: THREE.WebGLRenderer): EnvironmentHandle {
   const pmremGenerator = new THREE.PMREMGenerator(renderer);
@@ -54,26 +95,22 @@ async function loadCubeTexture(urls: string[]): Promise<THREE.CubeTexture> {
 export async function loadEnvironment(
   renderer: THREE.WebGLRenderer,
   spec: EnvironmentSpec | undefined,
-  assetPath: string
+  assetPath: string,
+  resolve: (url: string) => string = (url) => url
 ): Promise<EnvironmentHandle> {
   const resolved = spec ?? 'none';
 
   if (typeof resolved === 'object' && 'cubeMap' in resolved && resolved.cubeMap?.length === 6) {
-    const urls = resolved.cubeMap.map((face) => resolveAssetPath(assetPath, face));
-    const cacheKey = `cube:${urls.join('|')}`;
-    const cached = cache.get(cacheKey);
-    if (cached) return cached;
-
-    const cubeTexture = await loadCubeTexture(urls);
-    const pmremGenerator = new THREE.PMREMGenerator(renderer);
-    pmremGenerator.compileCubemapShader();
-    const texture = pmremGenerator.fromCubemap(cubeTexture).texture;
-    pmremGenerator.dispose();
-    cubeTexture.dispose();
-
-    const handle = { texture, owned: false, dispose: () => texture.dispose() };
-    cache.set(cacheKey, handle);
-    return handle;
+    const urls = resolved.cubeMap.map((face) => resolve(resolveAssetPath(assetPath, face)));
+    return acquireCached(`cube:${urls.join('|')}`, async () => {
+      const cubeTexture = await loadCubeTexture(urls);
+      const pmremGenerator = new THREE.PMREMGenerator(renderer);
+      pmremGenerator.compileCubemapShader();
+      const texture = pmremGenerator.fromCubemap(cubeTexture).texture;
+      pmremGenerator.dispose();
+      cubeTexture.dispose();
+      return texture;
+    });
   }
 
   const source =
@@ -84,25 +121,20 @@ export async function loadEnvironment(
         : null;
 
   if (source) {
-    const url = resolveAssetPath(assetPath, source);
-    const cacheKey = `hdr:${url}`;
-    const cached = cache.get(cacheKey);
-    if (cached) return cached;
-
+    const url = resolve(resolveAssetPath(assetPath, source));
     try {
-      const hdrTexture = await new HDRLoader()
-        .setDataType(THREE.HalfFloatType)
-        .loadAsync(url);
+      return await acquireCached(`hdr:${url}`, async () => {
+        const hdrTexture = await new HDRLoader()
+          .setDataType(THREE.HalfFloatType)
+          .loadAsync(url);
 
-      const pmremGenerator = new THREE.PMREMGenerator(renderer);
-      pmremGenerator.compileEquirectangularShader();
-      const texture = pmremGenerator.fromEquirectangular(hdrTexture).texture;
-      pmremGenerator.dispose();
-      hdrTexture.dispose();
-
-      const handle = { texture, owned: false, dispose: () => texture.dispose() };
-      cache.set(cacheKey, handle);
-      return handle;
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        pmremGenerator.compileEquirectangularShader();
+        const texture = pmremGenerator.fromEquirectangular(hdrTexture).texture;
+        pmremGenerator.dispose();
+        hdrTexture.dispose();
+        return texture;
+      });
     } catch (error) {
       console.warn(`Failed to load HDR environment "${url}", using procedural fallback`, error);
     }
@@ -112,6 +144,14 @@ export async function loadEnvironment(
 }
 
 export function disposeEnvironmentCache(): void {
-  cache.forEach((handle) => handle.dispose());
+  const pending = [...cache.values()];
   cache.clear();
+  for (const promise of pending) {
+    promise
+      .then((entry) => {
+        entry.disposed = true;
+        entry.texture.dispose();
+      })
+      .catch(() => {});
+  }
 }
