@@ -118,7 +118,7 @@ describe('evaluateRoll — reroll', () => {
       die(2, 6, [{ op: 'reroll-once', compare: { op: '<=', value: 2 } }]),
       { rng: rngFromRolls([[1, 6], [5, 6], [4, 6]]) },
     );
-    expect(result.rolls.filter((d) => d.kept).map((d) => d.value)).toEqual([4, 5]);
+    expect(result.rolls.filter((d) => d.kept).map((d) => d.value)).toEqual([5, 4]);
     expect(result.value).toBe(9);
   });
 

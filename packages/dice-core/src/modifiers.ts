@@ -154,6 +154,7 @@ function applyReroll(
   const compare = mod.compare ?? { op: '<=' as ComparisonOp, value: 1 };
   const recursive = mod.op === 'reroll-recursive';
   const out: WorkingDie[] = [];
+  const rerolled: WorkingDie[] = [];
 
   for (const die of dice) {
     if (die.exploded) {
@@ -164,18 +165,17 @@ function applyReroll(
       out.push(die);
       continue;
     }
-    const discarded = { ...die, kept: false, rerolled: true };
-    out.push(discarded);
+    out.push({ ...die, kept: false, rerolled: true });
 
     let roll = faces.roll();
     let safety = 0;
     while (matches(roll, compare) && recursive && safety++ < 1000) {
-      out.push({ value: roll, kept: false, exploded: false, rerolled: true, penetrated: false, outcome: 'neutral', history: [roll] });
+      rerolled.push({ value: roll, kept: false, exploded: false, rerolled: true, penetrated: false, outcome: 'neutral', history: [roll] });
       roll = faces.roll();
     }
-    out.push({ value: roll, kept: true, exploded: false, rerolled: true, penetrated: false, outcome: 'neutral', history: [roll] });
+    rerolled.push({ value: roll, kept: true, exploded: false, rerolled: true, penetrated: false, outcome: 'neutral', history: [roll] });
   }
-  return out;
+  return [...out, ...rerolled];
 }
 
 function applyExplode(
