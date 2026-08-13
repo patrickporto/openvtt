@@ -5,6 +5,16 @@ import { FormulaError } from './errors';
 
 export type CompiledFormula = (scope?: Scope) => number | boolean;
 
+function guardedDiv(a: number, b: number): number {
+  if (b === 0) throw new FormulaError('Division by zero');
+  return a / b;
+}
+
+function guardedMod(a: number, b: number): number {
+  if (b === 0) throw new FormulaError('Modulo by zero');
+  return a % b;
+}
+
 export function compileFormula(expr: PureFormula): CompiledFormula {
   const code = gen(expr);
   const fn = new Function(
@@ -12,10 +22,19 @@ export function compileFormula(expr: PureFormula): CompiledFormula {
     '__resolve',
     '__num',
     '__truthy',
+    '__div',
+    '__mod',
     `return ${code};`,
-  ) as (s: Scope, r: typeof resolvePath, n: typeof toNumber, t: typeof isTruthy) => number | boolean;
+  ) as (
+    s: Scope,
+    r: typeof resolvePath,
+    n: typeof toNumber,
+    t: typeof isTruthy,
+    d: typeof guardedDiv,
+    m: typeof guardedMod,
+  ) => number | boolean;
 
-  return (scope?: Scope) => fn(scope, resolvePath, toNumber, isTruthy);
+  return (scope?: Scope) => fn(scope, resolvePath, toNumber, isTruthy, guardedDiv, guardedMod);
 }
 
 function gen(expr: PureFormula): string {
@@ -93,9 +112,9 @@ function genBinary(op: NodeKey, expr: FormulaExpr<never>): string {
     case '*':
       return `(__num(${l}) * __num(${r}))`;
     case '/':
-      return `(__num(${l}) / __num(${r}))`;
+      return `__div(__num(${l}), __num(${r}))`;
     case '%':
-      return `(__num(${l}) % __num(${r}))`;
+      return `__mod(__num(${l}), __num(${r}))`;
     case '==':
       return `(${l} === ${r})`;
     case '!=':

@@ -24,7 +24,7 @@ export type { ParseOptions } from './parse';
 
 export { toFormula } from './serialize';
 
-export { extractVariables } from './variables';
+export { extractLeaves, extractVariables } from './variables';
 
 export { evaluateFormula } from './evaluate';
 export type { EvaluateOptions, LeafHandler } from './evaluate';

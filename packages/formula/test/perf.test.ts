@@ -3,6 +3,7 @@ import {
   compileFormula,
   createMemoizedEvaluator,
   evaluateFormula,
+  FormulaError,
   parseFormula,
 } from '../src';
 import type { FormulaExpr } from '../src';
@@ -45,8 +46,24 @@ describe('compileFormula — speed (sanity)', () => {
   });
 });
 
+describe('compileFormula — division semantics', () => {
+  it('throws FormulaError on division by zero, like the interpreter', () => {
+    const ir = parseFormula('1 / 0');
+    expect(() => evaluateFormula(ir)).toThrow(FormulaError);
+    expect(() => compileFormula(ir)()).toThrow(FormulaError);
+    expect(() => compileFormula(ir)()).toThrow('Division by zero');
+  });
+
+  it('throws FormulaError on modulo by zero, like the interpreter', () => {
+    const ir = parseFormula('1 % 0');
+    expect(() => evaluateFormula(ir)).toThrow(FormulaError);
+    expect(() => compileFormula(ir)()).toThrow(FormulaError);
+    expect(() => compileFormula(ir)()).toThrow('Modulo by zero');
+  });
+});
+
 describe('createMemoizedEvaluator — dirty propagation', () => {
-  it('returns correct values and re-evaluates only when a variable changes', () => {
+  it('returns correct values and re-evaluates leaves on every invocation', () => {
     type Leaf = { load: [] };
     const calls = mock((l: Leaf) => (l as unknown as { load: [number] }).load[0]!);
     const evalMemo = createMemoizedEvaluator<Leaf>({ onLeaf: calls });
@@ -59,13 +76,27 @@ describe('createMemoizedEvaluator — dirty propagation', () => {
     expect(calls).toHaveBeenCalledTimes(1);
 
     expect(evalMemo(expr, { x: 5 })).toBe(15);
-    expect(calls).toHaveBeenCalledTimes(1);
-
-    expect(evalMemo(expr, { x: 2 })).toBe(12);
     expect(calls).toHaveBeenCalledTimes(2);
 
     expect(evalMemo(expr, { x: 2 })).toBe(12);
-    expect(calls).toHaveBeenCalledTimes(2);
+    expect(calls).toHaveBeenCalledTimes(3);
+
+    expect(evalMemo(expr, { x: 2 })).toBe(12);
+    expect(calls).toHaveBeenCalledTimes(4);
+  });
+
+  it('never returns stale values for non-deterministic leaves', () => {
+    type Leaf = { roll: [] };
+    let next = 0;
+    const evalMemo = createMemoizedEvaluator<Leaf>({ onLeaf: () => ++next });
+
+    const expr = {
+      '+': [{ roll: [] } as unknown as Leaf, { var: 'x' }],
+    } as unknown as FormulaExpr<Leaf>;
+
+    expect(evalMemo(expr, { x: 1 })).toBe(2);
+    expect(evalMemo(expr, { x: 1 })).toBe(3);
+    expect(evalMemo(expr, { x: 1 })).toBe(4);
   });
 
   it('caches pure formulas by scope', () => {

@@ -7,6 +7,24 @@ export function extractVariables<E = never>(expr: FormulaExpr<E>): readonly stri
   return [...found];
 }
 
+export function extractLeaves<E = never>(expr: FormulaExpr<E>): readonly E[] {
+  const found: E[] = [];
+  collectLeaves(expr, found);
+  return found;
+}
+
+function collectLeaves<E>(expr: FormulaExpr<E>, found: E[]): void {
+  const key = nodeKey(expr);
+  if (key === 'leaf') {
+    found.push(expr as unknown as E);
+    return;
+  }
+  if (key === 'literal' || key === 'var' || typeof expr !== 'object' || expr === null) return;
+
+  const children = childrenOf(expr as FormulaExpr<never>, key);
+  for (const child of children) collectLeaves(child, found);
+}
+
 function collect<E>(expr: FormulaExpr<E>, found: Set<string>): void {
   if (typeof expr !== 'object' || expr === null) return;
 
