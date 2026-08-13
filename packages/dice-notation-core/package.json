@@ -1,7 +1,7 @@
 {
-  "name": "@openvtt/dice-notation",
+  "name": "@openvtt/dice-notation-core",
   "version": "0.1.0",
-  "description": "Canonical OpenVTT dice notation — unambiguous parse/fromFormula and toFormula for the dice IR, the best of Foundry and Roll20 without their collisions.",
+  "description": "Dialect-parametrized lexer, parser and serializer core for OpenVTT dice notations — shared machinery behind @openvtt/dice-notation, @openvtt/dice-foundry-notation and @openvtt/dice-roll20-notation.",
   "type": "module",
   "license": "MIT",
   "main": "./dist/index.cjs",
@@ -23,16 +23,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@openvtt/dice-core": "workspace:*",
-    "@openvtt/dice-notation-core": "workspace:*"
+    "@openvtt/dice-core": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.4.0",
-    "typescript": "^5.8.0",
-    "valibot": "^1.4.2"
+    "typescript": "^5.8.0"
   },
   "publishConfig": {
     "access": "public"
   },
-  "keywords": ["openvtt", "dice", "notation", "parser", "foundry", "roll20", "vtt"]
+  "keywords": ["openvtt", "dice", "notation", "parser", "serializer", "lexer", "vtt"]
 }

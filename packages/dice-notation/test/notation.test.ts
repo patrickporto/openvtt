@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { evaluateRoll } from '@openvtt/dice-core';
+import * as v from 'valibot';
+import { evaluateRoll, rollSchema } from '@openvtt/dice-core';
 import { fromFormula, NotationError, toFormula } from '../src';
 
 describe('fromFormula — dice terms', () => {
@@ -225,5 +226,17 @@ describe('notation → dice-core evaluateRoll', () => {
     const ir = fromFormula('1d20 + @abilities.str.mod');
     const result = evaluateRoll(ir, { rng: () => 0.95, scope: { abilities: { str: { mod: 3 } } } });
     expect(result.value).toBe(23);
+  });
+});
+
+describe('notation → rollSchema round-trip', () => {
+  it('parsed IR validates against rollSchema', () => {
+    const ir = fromFormula('4d6keep-highest3 + floor((@str - 10) / 2)');
+    expect(v.parse(rollSchema, ir)).toEqual(ir);
+  });
+
+  it('parsed pool validates against rollSchema', () => {
+    const ir = fromFormula('{2d6, 1d8}keep-highest2');
+    expect(v.parse(rollSchema, ir)).toEqual(ir);
   });
 });

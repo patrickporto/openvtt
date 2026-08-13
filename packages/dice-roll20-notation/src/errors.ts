@@ -1,19 +1,9 @@
-export interface Roll20NotationErrorOptions {
-  readonly position?: number;
-  readonly input?: string;
-  readonly cause?: unknown;
-}
+import { NotationErrorBase, type NotationErrorOptions } from '@openvtt/dice-notation-core';
 
-export class Roll20NotationError extends Error {
-  readonly position?: number;
-  readonly input?: string;
+export type Roll20NotationErrorOptions = NotationErrorOptions;
 
+export class Roll20NotationError extends NotationErrorBase {
   constructor(message: string, options: Roll20NotationErrorOptions = {}) {
-    super(message);
-    this.name = 'Roll20NotationError';
-    this.position = options.position;
-    this.input = options.input;
-    if (options.cause !== undefined) this.cause = options.cause;
-    Object.setPrototypeOf(this, new.target.prototype);
+    super('Roll20NotationError', message, options);
   }
 }

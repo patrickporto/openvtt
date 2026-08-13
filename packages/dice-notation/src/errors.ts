@@ -1,19 +1,9 @@
-export interface NotationErrorOptions {
-  readonly position?: number;
-  readonly input?: string;
-  readonly cause?: unknown;
-}
+import { NotationErrorBase, type NotationErrorOptions } from '@openvtt/dice-notation-core';
 
-export class NotationError extends Error {
-  readonly position?: number;
-  readonly input?: string;
+export type { NotationErrorOptions };
 
+export class NotationError extends NotationErrorBase {
   constructor(message: string, options: NotationErrorOptions = {}) {
-    super(message);
-    this.name = 'NotationError';
-    this.position = options.position;
-    this.input = options.input;
-    if (options.cause !== undefined) this.cause = options.cause;
-    Object.setPrototypeOf(this, new.target.prototype);
+    super('NotationError', message, options);
   }
 }

@@ -24,8 +24,7 @@
   },
   "dependencies": {
     "@openvtt/dice-core": "workspace:*",
-    "@openvtt/formula": "workspace:*",
-    "valibot": "^1.4.2"
+    "@openvtt/dice-notation-core": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.4.0",

@@ -7,5 +7,5 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   treeshake: true,
-  external: ['@openvtt/dice-core', '@openvtt/formula', 'valibot'],
+  external: ['@openvtt/dice-core', '@openvtt/dice-notation-core', '@openvtt/formula', 'valibot'],
 });
