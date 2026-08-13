@@ -1,12 +1,13 @@
 import { v7 as uuidv7 } from 'uuid';
 import { evaluateFormula, toNumber, type Scope } from '@openvtt/formula';
 import type { DieTerm, DiceExpr, Modifier, Pool, RollExpr } from './ir';
-import { createRng, type Rng } from './rng';
+import { createRng, rollInt, type Rng } from './rng';
 import type { DieRoll, TermResult, RollResult, WorkingDie } from './result';
 import { freeze } from './result';
 import {
   applyModifiers,
   appliedModifierNames,
+  applyOutcomes,
   computeValue,
   resolveFaces,
   resolveModifier,
@@ -76,7 +77,7 @@ function evalDie(term: DieTerm, ctx: Ctx): TermResult {
 
   const modifiers: readonly Modifier[] = term.modifiers ?? [];
   const resolved: readonly ResolvedModifier[] = modifiers.map((m) => resolveModifier(m, ctx));
-  const finalDice = applyModifiers(dice, resolved, faces, ctx);
+  const finalDice = applyOutcomes(applyModifiers(dice, resolved, faces, ctx), resolved);
   const value = computeValue(finalDice, resolved);
 
   const result: TermResult = {
@@ -112,8 +113,8 @@ function evalPool(pool: Pool, ctx: Ctx): TermResult {
 
   const modifiers: readonly Modifier[] = pool.modifiers ?? [];
   const resolved: readonly ResolvedModifier[] = modifiers.map((m) => resolveModifier(m, ctx));
-  const faces = poolFallbackFaces(dice);
-  const finalDice = applyModifiers(dice, resolved, faces, ctx);
+  const faces = poolFallbackFaces(dice, ctx);
+  const finalDice = applyOutcomes(applyModifiers(dice, resolved, faces, ctx), resolved);
   const value = computeValue(finalDice, resolved);
 
   const result: TermResult = {
@@ -128,12 +129,12 @@ function evalPool(pool: Pool, ctx: Ctx): TermResult {
   return result;
 }
 
-function poolFallbackFaces(dice: readonly WorkingDie[]): ResolvedFaces {
+function poolFallbackFaces(dice: readonly WorkingDie[], ctx: Ctx): ResolvedFaces {
   const max = dice.reduce((acc, d) => Math.max(acc, d.value), 1);
   return {
     sides: max,
     max,
-    roll: () => 1,
+    roll: () => rollInt(ctx.rng, max),
   };
 }
 

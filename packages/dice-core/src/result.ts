@@ -56,7 +56,7 @@ export function toDieRoll(d: WorkingDie): DieRoll {
     rerolled: d.rerolled,
     penetrated: d.penetrated,
     outcome: d.outcome,
-    history: d.history,
+    history: [...d.history],
   };
 }
 

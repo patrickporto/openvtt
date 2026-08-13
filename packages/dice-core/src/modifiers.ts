@@ -3,7 +3,7 @@ import type { Rng } from './rng';
 import { rollInt } from './rng';
 import { toNumber } from '@openvtt/formula';
 import type { Scope } from '@openvtt/formula';
-import type { WorkingDie } from './result';
+import type { DieOutcome, WorkingDie } from './result';
 import type { ComparisonOp } from './ir';
 
 export interface ResolvedFaces {
@@ -192,7 +192,7 @@ function applyExplode(
   const initial = out.length;
 
   for (let i = 0; i < initial; i++) {
-    let current = out[i]!;
+    let current: WorkingDie = out[i]!;
     let generations = 0;
     while (generations < cap) {
       const trigger = current.history[current.history.length - 1] ?? current.value;
@@ -201,10 +201,14 @@ function applyExplode(
       const roll = faces.roll();
       const adj = penetrating ? roll - 1 : roll;
       if (compound) {
-        current.value += adj;
-        current.history.push(roll);
-        current.exploded = true;
-        if (penetrating) current.penetrated = true;
+        current = {
+          ...current,
+          value: current.value + adj,
+          history: [...current.history, roll],
+          exploded: true,
+          penetrated: current.penetrated || penetrating,
+        };
+        out[i] = current;
       } else {
         const born: WorkingDie = {
           value: adj,
@@ -229,10 +233,9 @@ function applyKeepDrop(
   op: ModifierOp,
   count: number,
 ): readonly WorkingDie[] {
-  const out = dice.map((d) => ({ ...d }));
-  const len = out.length;
+  const len = dice.length;
   const n = Math.max(0, Math.min(count, len));
-  const order = out
+  const order = dice
     .map((d, i) => ({ v: d.value, i }))
     .sort((a, b) => a.v - b.v || a.i - b.i);
 
@@ -247,10 +250,7 @@ function applyKeepDrop(
     order.slice(n).forEach((o) => keepSet.add(o.i));
   }
 
-  out.forEach((d, i) => {
-    if (!keepSet.has(i)) d.kept = false;
-  });
-  return out;
+  return dice.map((d, i) => (keepSet.has(i) ? d : { ...d, kept: false }));
 }
 
 const SUCCESS_FAMILY: readonly ModifierOp[] = [
@@ -260,6 +260,54 @@ const SUCCESS_FAMILY: readonly ModifierOp[] = [
   'subtract-failure',
 ];
 
+interface SuccessPlan {
+  readonly cs?: ResolvedModifier;
+  readonly cf?: ResolvedModifier;
+  readonly df?: ResolvedModifier;
+  readonly csCompare: { readonly op: ComparisonOp; readonly value: number };
+  readonly cfCompare: { readonly op: ComparisonOp; readonly value: number };
+}
+
+function successPlan(modifiers: readonly ResolvedModifier[]): SuccessPlan | undefined {
+  const hasSuccessFamily = modifiers.some((m) =>
+    (SUCCESS_FAMILY as readonly string[]).includes(m.op),
+  );
+  if (!hasSuccessFamily) return undefined;
+
+  const cs = modifiers.find((m) => m.op === 'count-success');
+  const cf = modifiers.find((m) => m.op === 'count-failure');
+  const df = modifiers.find(
+    (m) => m.op === 'deduct-failure' || m.op === 'subtract-failure',
+  );
+
+  return {
+    cs,
+    cf,
+    df,
+    csCompare: cs?.compare ?? { op: '>', value: 0 },
+    cfCompare: cf?.compare ?? df?.compare ?? { op: '<=', value: 0 },
+  };
+}
+
+function outcomeOf(die: WorkingDie, plan: SuccessPlan): DieOutcome {
+  if (!die.kept) return die.outcome;
+  if (plan.cs && matches(die.value, plan.csCompare)) return 'success';
+  if ((plan.cf || plan.df) && matches(die.value, plan.cfCompare)) return 'failure';
+  return die.outcome;
+}
+
+export function applyOutcomes(
+  dice: readonly WorkingDie[],
+  modifiers: readonly ResolvedModifier[],
+): readonly WorkingDie[] {
+  const plan = successPlan(modifiers);
+  if (!plan) return dice;
+  return dice.map((d) => {
+    const outcome = outcomeOf(d, plan);
+    return outcome === d.outcome ? d : { ...d, outcome };
+  });
+}
+
 export function computeValue(
   dice: readonly WorkingDie[],
   modifiers: readonly ResolvedModifier[],
@@ -267,31 +315,19 @@ export function computeValue(
   const kept = dice.filter((d) => d.kept);
   const sumKept = kept.reduce((acc, d) => acc + d.value, 0);
 
-  const hasSuccessFamily = modifiers.some((m) =>
-    (SUCCESS_FAMILY as readonly string[]).includes(m.op),
-  );
-  if (hasSuccessFamily) {
-    const cs = modifiers.find((m) => m.op === 'count-success');
-    const cf = modifiers.find((m) => m.op === 'count-failure');
-    const df = modifiers.find(
-      (m) => m.op === 'deduct-failure' || m.op === 'subtract-failure',
-    );
-
-    const csCompare = cs?.compare ?? { op: '>' as ComparisonOp, value: 0 };
-    const cfCompare = cf?.compare ?? df?.compare ?? { op: '<=' as ComparisonOp, value: 0 };
-
-    for (const d of dice) {
-      if (!d.kept) continue;
-      if (cs && matches(d.value, csCompare)) d.outcome = 'success';
-      else if ((cf || df) && matches(d.value, cfCompare)) d.outcome = 'failure';
+  const plan = successPlan(modifiers);
+  if (plan) {
+    let successes = 0;
+    let failures = 0;
+    for (const d of kept) {
+      const outcome = outcomeOf(d, plan);
+      if (outcome === 'success') successes++;
+      else if (outcome === 'failure') failures++;
     }
 
-    const successes = kept.filter((d) => d.outcome === 'success').length;
-    const failures = kept.filter((d) => d.outcome === 'failure').length;
-
-    if (cs) return successes;
-    if (df) return successes - failures;
-    if (cf) return failures;
+    if (plan.cs) return successes;
+    if (plan.df) return successes - failures;
+    if (plan.cf) return failures;
   }
 
   const margin = modifiers.find((m) => m.op === 'margin-success');
