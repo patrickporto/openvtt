@@ -1,6 +1,18 @@
-import { Canvas, defineCanvasElements, newId, type OpenVTTFogPanel, type OpenVTTLayerPanel, type SceneDataInput, type GridType } from '@openvtt/canvas';
+import {
+  Canvas,
+  defineCanvasElements,
+  dynamicBus,
+  newId,
+  type OpenVTTLayerPanel,
+  type SceneDataInput,
+  type GridType,
+} from '@openvtt/canvas';
+import { standardPlugins } from '@openvtt/canvas-preset-standard';
+import { WallsPlugin, chainSegments, ellipsePoints, rectPoints, type WallSegmentDataInput } from '@openvtt/canvas-plugin-walls';
+import { defineFogElements, type OpenVTTFogPanel } from '@openvtt/canvas-plugin-fog';
 
 defineCanvasElements();
+defineFogElements();
 
 const ICONS = {
   select: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M6 3.5 18.5 11l-5.6 1.8L10.5 18 6 3.5Z"/></svg>`,
@@ -141,12 +153,15 @@ export function renderCanvas(root: HTMLElement): () => void {
     gridSelect.appendChild(o);
   }
 
-  const canvas = new Canvas(stage);
+  const canvas = new Canvas(stage, { plugins: standardPlugins });
   (window as unknown as { canvas: Canvas }).canvas = canvas;
   root.querySelector<OpenVTTLayerPanel>('#layer-panel')!.canvas = canvas;
   root.querySelector<OpenVTTFogPanel>('#fog-panel')!.canvas = canvas;
   let disposed = false;
   let tokenHue = 210;
+
+  const onPluginEvent = (name: string, handler: (payload: any) => void): (() => void) =>
+    dynamicBus(canvas.bus).on(name, handler);
 
   function setStatus(state: 'ready' | 'busy' | 'error', text: string) {
     statusPill.dataset.state = state;
@@ -265,37 +280,68 @@ export function renderCanvas(root: HTMLElement): () => void {
   }
 
   function refreshTokenTexture(): void {
-    const label = canvas.tools.options.token.label || '?';
-    canvas.tools.options.token.texture = tokenTexture(label[0].toUpperCase(), tokenHue);
+    const token = canvas.tools.options.token as { label?: string; texture?: string };
+    const label = token?.label || '?';
+    token.texture = tokenTexture(label[0].toUpperCase(), tokenHue);
   }
 
   function renderOptions(toolId: string): void {
     optionsEl.innerHTML = '';
     if (!canvas.tools) return;
-    const o = canvas.tools.options;
+    const o = canvas.tools.options as Record<string, any>;
     switch (toolId) {
-      case 'select':
+      case 'select': {
+        const walls = () => canvas.plugins.get<WallsPlugin>('walls');
         optionsEl.append(
           miniBtn('Fit', ICONS.fit, false, () => canvas.fit()),
           miniBtn('Delete', ICONS.trash, true, () => canvas.deleteSelected()),
           miniBtn('Join points', ICONS.select, false, () => {
-            const joined = canvas.joinWallEndpoints(8);
+            const joined = walls()?.joinWallEndpoints(8) ?? 0;
             log('wall', joined ? `joined ${joined} endpoints` : 'no endpoints to join');
           }),
           miniBtn('Close doors', ICONS.wall, false, () => {
-            canvas.closeAllDoors();
+            walls()?.closeAllDoors();
             log('door', 'all doors closed');
           }),
           miniBtn('Enclose', ICONS.fit, false, () => {
-            canvas.encloseScene();
+            walls()?.encloseScene();
             log('wall', 'scene enclosed');
           }),
           miniBtn('Draw→Walls', ICONS.wall, false, () => {
-            const converted = canvas.convertDrawingsToWalls();
-            log('wall', converted ? `converted ${converted} drawing(s)` : 'select a rect/ellipse drawing first');
+            const drawings = canvas.selected.filter((obj) => obj.objectType === 'drawing');
+            if (drawings.length === 0) {
+              log('wall', 'select a rect/ellipse drawing first');
+              return;
+            }
+            canvas.history.beginBatch();
+            void (async () => {
+              try {
+                for (const obj of drawings) {
+                  const doc = obj.document as { type?: string; x?: number; y?: number; width?: number; height?: number };
+                  const x = doc.x ?? 0;
+                  const y = doc.y ?? 0;
+                  const width = doc.width ?? 0;
+                  const height = doc.height ?? 0;
+                  let segments: WallSegmentDataInput[] = [];
+                  if (doc.type === 'rect') {
+                    segments = chainSegments(rectPoints(x, y, width, height, 1)) as WallSegmentDataInput[];
+                  } else if (doc.type === 'ellipse') {
+                    segments = chainSegments(ellipsePoints(x + width / 2, y + height / 2, width / 2, height / 2, 32)) as WallSegmentDataInput[];
+                  }
+                  if (segments.length === 0) continue;
+                  await canvas.documents.create('wall', { segments });
+                  canvas.deleteObject(obj);
+                }
+                canvas.refreshSelection();
+              } finally {
+                canvas.history.endBatch();
+              }
+            })();
+            log('wall', `converting ${drawings.length} drawing(s)`);
           }),
         );
         break;
+      }
       case 'hand':
         optionsEl.append(miniBtn('Fit', ICONS.fit, false, () => canvas.fit()));
         break;
@@ -323,10 +369,10 @@ export function renderCanvas(root: HTMLElement): () => void {
       case 'wall': {
         optionsEl.append(
           opt(
-            'Mode',
+             'Mode',
             segField(
               [
-                { value: 'line' as const, label: 'Line' },
+                { value: 'poly' as const, label: 'Line' },
                 { value: 'freehand' as const, label: 'Free' },
                 { value: 'quadratic' as const, label: 'Quad' },
                 { value: 'cubic' as const, label: 'Cubic' },
@@ -515,25 +561,20 @@ export function renderCanvas(root: HTMLElement): () => void {
       const def = TOOLS.find((t) => t.id === id);
       setStatus('ready', def ? `${def.name} tool` : id);
     }),
-    canvas.on('token:moved', ({ id, x, y }) =>
-      log('token:moved', `${id.slice(0, 8)} → (${Math.round(x)}, ${Math.round(y)})`),
-    ),
-    canvas.on('token:selected', ({ ids }) =>
+    canvas.on('selection:change', ({ ids }) =>
       setStatus('ready', ids.length ? `${ids.length} selected` : 'ready'),
     ),
-    canvas.on('token:create', ({ id }) => log('token', `created ${(id ?? '?').slice(0, 8)}`)),
-    canvas.on('wall:create', ({ id }) => log('wall', `created ${(id ?? '?').slice(0, 8)}`)),
-    canvas.on('wall:update', ({ id, segments }) => {
-      const door = segments?.find((s) => s.door);
-      if (door) log('door', door.doorOpen ? 'opened' : 'closed');
-      else log('wall', `updated ${(id ?? '?').slice(0, 8)}`);
+    canvas.on('document:moved', ({ type, id, x, y }) => {
+      if (type === 'token') log('token:moved', `${id.slice(0, 8)} → (${Math.round(x)}, ${Math.round(y)})`);
     }),
-    canvas.on('light:create', ({ id }) => log('light', `created ${(id ?? '?').slice(0, 8)}`)),
-    canvas.on('template:create', ({ id, shape }) => log('template', `created ${shape} ${(id ?? '?').slice(0, 8)}`)),
+    canvas.on('document:create', ({ type, id }) => log(type, `created ${(id ?? '?').slice(0, 8)}`)),
+    canvas.on('document:delete', ({ type, id }) => log(type, `deleted ${(id ?? '?').slice(0, 8)}`)),
     canvas.on('ping', ({ x, y }) => log('ping', `(${Math.round(x)}, ${Math.round(y)})`)),
-    canvas.on('tile:create', ({ id }) => log('tile', `created ${(id ?? '?').slice(0, 8)}`)),
-    canvas.on('drawing:create', ({ id }) => log('drawing', `created ${(id ?? '?').slice(0, 8)}`)),
-    canvas.on('measure', ({ units, pixels }) => {
+    onPluginEvent('wall:update', (doc: any) => {
+      const door = doc?.segments?.find((s: any) => s.door);
+      if (door) log('door', door.doorOpen ? 'opened' : 'closed');
+    }),
+    onPluginEvent('measure', ({ units, pixels }: any) => {
       setStatus('ready', `distance · ${units.toFixed(1)} u (${Math.round(pixels)}px)`);
       log('measure', `${units.toFixed(1)} u · ${Math.round(pixels)}px`);
     }),
