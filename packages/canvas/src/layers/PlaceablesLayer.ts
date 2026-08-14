@@ -1,8 +1,10 @@
 import RBush from 'rbush';
+import * as v from 'valibot';
 import type { Constructor } from '../types';
 import { InteractionLayer, type InteractionLayerOptions } from './InteractionLayer';
 import { PlaceableObject } from '../placeables/PlaceableObject';
 import type { CanvasLike, PlaceableObjectOptions } from '../placeables/PlaceableObject';
+import { dynamicBus } from '../bus';
 import { newId, rectanglesIntersect } from '../utils';
 
 interface IndexEntry {
@@ -31,15 +33,25 @@ function pickKeys<D>(doc: D, keys: string[]): Partial<D> {
 export interface PlaceablesLayerOptions<D, O extends PlaceableObject<D>> extends InteractionLayerOptions {
   objectClass: Constructor<O, [PlaceableDocument<D>, CanvasLike, (PlaceableObjectOptions | undefined)?]>;
   canvas: CanvasLike;
+  /**
+   * Tipo de documento hospedado (ex.: 'token'). Quando presente, a layer emite
+   * `<type>:create|update|delete` (eventos registrados dinamicamente no bus)
+   * além dos eventos genéricos `document:create|update|delete` do core.
+   */
+  documentType?: string;
+  /** Schema Valibot aplicado em create() — normaliza defaults do documento. */
+  schema?: v.GenericSchema;
 }
 
 export class PlaceablesLayer<D = Record<string, unknown>, O extends PlaceableObject<D> = PlaceableObject<D>, I = D> extends InteractionLayer {
   readonly objects = new Map<string, O>();
   readonly objectClass: Constructor<O, [PlaceableDocument<D>, CanvasLike, (PlaceableObjectOptions | undefined)?]>;
+  readonly documentType?: string;
   protected readonly canvas: CanvasLike;
   protected _controlled: O | null = null;
   protected readonly index = new RBush<IndexEntry>();
   private readonly entryById = new Map<string, IndexEntry>();
+  private readonly schema?: v.GenericSchema;
   /** Callback de histórico (ligada pelo Canvas/HistoryManager). */
   onMutate: ((mutation: LayerMutation<D>) => void) | null = null;
 
@@ -47,6 +59,8 @@ export class PlaceablesLayer<D = Record<string, unknown>, O extends PlaceableObj
     super(options);
     this.objectClass = options.objectClass;
     this.canvas = options.canvas;
+    this.documentType = options.documentType;
+    this.schema = options.schema;
   }
 
   get placeables(): O[] {
@@ -62,8 +76,9 @@ export class PlaceablesLayer<D = Record<string, unknown>, O extends PlaceableObj
   }
 
   async create(data: I & { id?: string }, options?: { interactive?: boolean }): Promise<O> {
-    const id = data.id ?? this.generateId();
-    const document = { ...data, id } as unknown as D & { id: string };
+    const parsed = this.schema ? (v.parse(this.schema, data) as I & { id?: string }) : data;
+    const id = parsed.id ?? this.generateId();
+    const document = { ...parsed, id } as unknown as D & { id: string };
     const object = new this.objectClass(document, this.canvas, options);
     this.objects.set(id, object);
     this.addChild(object);
@@ -171,7 +186,26 @@ export class PlaceablesLayer<D = Record<string, unknown>, O extends PlaceableObj
     return newId();
   }
 
-  protected emitCreate(_document: D & { id: string }): void {}
-  protected emitUpdate(_document: D): void {}
-  protected emitDelete(_id: string): void {}
+  /** Emissão dinâmica de eventos tipados por nome (registrados pelos plugins). */
+  private emitDynamic(name: string, payload: unknown): void {
+    dynamicBus(this.canvas.bus).emit(name, payload);
+  }
+
+  protected emitCreate(document: D & { id: string }): void {
+    const doc = document as Record<string, unknown>;
+    if (this.documentType) this.emitDynamic(`${this.documentType}:create`, { ...doc });
+    this.emitDynamic('document:create', { type: this.documentType ?? this.layerName, id: document.id, document: { ...doc } });
+  }
+
+  protected emitUpdate(document: D): void {
+    const doc = document as Record<string, unknown>;
+    const id = typeof doc.id === 'string' ? doc.id : '';
+    if (this.documentType) this.emitDynamic(`${this.documentType}:update`, { ...doc });
+    this.emitDynamic('document:update', { type: this.documentType ?? this.layerName, id, document: { ...doc } });
+  }
+
+  protected emitDelete(id: string): void {
+    if (this.documentType) this.emitDynamic(`${this.documentType}:delete`, { id });
+    this.emitDynamic('document:delete', { type: this.documentType ?? this.layerName, id });
+  }
 }

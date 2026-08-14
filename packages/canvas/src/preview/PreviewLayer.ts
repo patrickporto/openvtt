@@ -1,8 +1,6 @@
 import { Graphics, Text } from 'pixi.js';
 import { CanvasLayer, type CanvasLayerOptions } from '../layers/CanvasLayer';
 import { CONFIG } from '../config';
-import { flattenSegment, type SegmentSpec } from '../geometry';
-import type { WallSegmentData } from '../schemas';
 import type { Canvas } from '../canvas';
 
 /**
@@ -60,29 +58,18 @@ export class PreviewLayer extends CanvasLayer {
     this.graphics.circle(x, y, radius).stroke({ color, width: 2, alpha: 0.9 });
   }
 
-  ghostSegment(x1: number, y1: number, x2: number, y2: number, color = CONFIG.wall.color): void {
-    this.graphics.moveTo(x1, y1).lineTo(x2, y2).stroke({ color, width: CONFIG.wall.width, alpha: 0.7 });
+  ghostSegment(x1: number, y1: number, x2: number, y2: number, color = CONFIG.wall.color, width = CONFIG.wall.width): void {
+    this.graphics.moveTo(x1, y1).lineTo(x2, y2).stroke({ color, width, alpha: 0.7 });
     this.graphics.circle(x1, y1, 4).fill({ color, alpha: 0.9 });
     this.graphics.circle(x2, y2, 4).fill({ color, alpha: 0.9 });
   }
 
-  ghostCurve(seg: SegmentSpec, color = CONFIG.wall.color): void {
-    const points = flattenSegment(seg as WallSegmentData);
+  ghostPolylineRaw(points: { x: number; y: number }[], color = CONFIG.wall.color, width = CONFIG.wall.width, showDots = true): void {
+    if (points.length < 2) return;
     this.graphics.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) this.graphics.lineTo(points[i].x, points[i].y);
-    this.graphics.stroke({ color, width: CONFIG.wall.width, alpha: 0.7 });
-    this.graphics.circle(seg.x1, seg.y1, 4).fill({ color, alpha: 0.9 });
-    this.graphics.circle(seg.x2, seg.y2, 4).fill({ color, alpha: 0.9 });
-    const controls: [number | undefined, number | undefined][] = [
-      [seg.cp1x, seg.cp1y],
-      [seg.cp2x, seg.cp2y],
-    ];
-    for (const [cx, cy] of controls) {
-      if (cx === undefined || cy === undefined) continue;
-      this.graphics.moveTo(seg.x1, seg.y1).lineTo(cx, cy).stroke({ color, width: 1, alpha: 0.35 });
-      this.graphics.moveTo(seg.x2, seg.y2).lineTo(cx, cy).stroke({ color, width: 1, alpha: 0.35 });
-      this.graphics.rect(cx - 4, cy - 4, 8, 8).stroke({ color, width: 1.5, alpha: 0.9 });
-    }
+    this.graphics.stroke({ color, width, alpha: 0.7 });
+    if (showDots) for (const p of points) this.graphics.circle(p.x, p.y, 4).fill({ color, alpha: 0.9 });
   }
 
   ghostRect(x: number, y: number, width: number, height: number, color = CONFIG.selection.color): void {

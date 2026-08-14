@@ -31,13 +31,12 @@ export class HistoryManager {
 
   constructor(canvas: Canvas) {
     this.canvas = canvas;
-    for (const layer of this.layers()) {
-      layer.onMutate = (mutation) => this.onLayerMutation(layer, mutation);
-    }
+    for (const layer of this.canvas.documents.layers()) this.attach(layer);
+    this.canvas.documents.onLayerCreated = (layer) => this.attach(layer);
   }
 
-  private layers(): AnyLayer[] {
-    return [this.canvas.tokens, this.canvas.tiles, this.canvas.drawings, this.canvas.walls] as unknown as AnyLayer[];
+  private attach(layer: AnyLayer): void {
+    layer.onMutate = (mutation) => this.onLayerMutation(layer, mutation);
   }
 
   get canUndo(): boolean {

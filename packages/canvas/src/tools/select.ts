@@ -1,22 +1,33 @@
 import { Tool } from './Tool';
 import type { PlaceableObject } from '../placeables/PlaceableObject';
-import type { Wall } from '../placeables/Wall';
 import type { CanvasPointerInfo, Point } from '../input/types';
-import type { HandleCorner, HandleInfo } from '../handles/HandlesLayer';
-import { withPointAt, type WallPointRef } from '../layers/WallsLayer';
-import type { WallSegmentData } from '../schemas';
+import type { HandleCorner, HandleEntry, HandleInfo } from '../handles/HandlesLayer';
+import type { DocumentTypeDefinition } from '../plugins/types';
 
-function cursorForHandle(handle: HandleInfo): string {
-  if (handle.type === 'rotate') return 'crosshair';
-  if (handle.type === 'wall-point') return 'move';
-  return handle.corner === 'tl' || handle.corner === 'br' ? 'nwse-resize' : 'nesw-resize';
+function cursorForHandle(entry: HandleEntry): string {
+  if (entry.cursor) return entry.cursor;
+  const info = entry.info;
+  if (info.type === 'rotate') return 'crosshair';
+  if (info.type === 'resize' && 'corner' in info) {
+    return info.corner === 'tl' || info.corner === 'br' ? 'nwse-resize' : 'nesw-resize';
+  }
+  return 'move';
+}
+
+function defOf(canvas: Tool['canvas'], obj: PlaceableObject): DocumentTypeDefinition | undefined {
+  return canvas.documents.definition(obj.objectType);
+}
+
+function isMovable(canvas: Tool['canvas'], obj: PlaceableObject): boolean {
+  return defOf(canvas, obj)?.behavior?.movable !== false;
 }
 
 /** Campos de documento que cada tipo transformável expõe para resize/rotação. */
-function transformFields(obj: PlaceableObject): Record<string, unknown> {
+function transformFields(canvas: Tool['canvas'], obj: PlaceableObject): Record<string, unknown> {
+  const adapter = defOf(canvas, obj)?.transform;
+  if (adapter) return adapter.snapshotFields(obj);
   const doc = obj.document as Record<string, unknown>;
-  if (obj.objectType === 'token') return { x: obj.x, y: obj.y, size: doc.size ?? 1, rotation: doc.rotation ?? 0 };
-  return { x: obj.x, y: obj.y, width: doc.width ?? 0, height: doc.height ?? 0, rotation: doc.rotation ?? 0 };
+  return { x: obj.x, y: obj.y, rotation: doc.rotation ?? 0 };
 }
 
 interface TransformSnapshot {
@@ -28,7 +39,7 @@ interface TransformSnapshot {
   before: Record<string, unknown>;
 }
 
-function takeSnapshots(objects: PlaceableObject[]): TransformSnapshot[] {
+function takeSnapshots(canvas: Tool['canvas'], objects: PlaceableObject[]): TransformSnapshot[] {
   return objects.map((obj) => {
     const b = obj.getAABB();
     return {
@@ -37,7 +48,7 @@ function takeSnapshots(objects: PlaceableObject[]): TransformSnapshot[] {
       x: obj.x,
       y: obj.y,
       rotation: obj.rotation,
-      before: transformFields(obj),
+      before: transformFields(canvas, obj),
     };
   });
 }
@@ -57,30 +68,24 @@ class SelectIdle extends Tool {
       this.setCursor(cursorForHandle(handle));
       return;
     }
-    const door = this.canvas.findDoor(point, this.doorTolerance());
-    this.setCursor(door ? 'pointer' : 'default');
-  }
-
-  private doorTolerance(): number {
-    return 12 / (this.viewport?.scale ?? 1);
+    const hover = this.canvas.bus.call('select:hovercursor', { x: point.x, y: point.y, cursor: null });
+    this.setCursor(hover.cursor ?? 'default');
   }
 
   override onPointerDown(info: CanvasPointerInfo): void {
-    if (info.button === 2) {
-      if (info.ctrlKey) {
-        const door = this.canvas.findDoor(info.point, this.doorTolerance());
-        if (door) this.canvas.toggleSecret(door.wall, door.segmentIndex);
-      }
-      return;
-    }
+    const intercepted = this.canvas.bus.call('select:pointerdown', {
+      x: info.point.x,
+      y: info.point.y,
+      button: info.button,
+      shiftKey: info.shiftKey,
+      ctrlKey: info.ctrlKey,
+      handled: false,
+    });
+    if (intercepted.handled || info.button === 2) return;
+
     const handle = this.canvas.handles.pickHandle(info.point);
     if (handle) {
       this.parent?.transition('pointingHandle', handle);
-      return;
-    }
-    const door = this.canvas.findDoor(info.point, this.doorTolerance());
-    if (door) {
-      this.parent?.transition('pointingDoor', { door, pointer: info });
       return;
     }
     if (info.target.type === 'object') {
@@ -88,28 +93,6 @@ class SelectIdle extends Tool {
     } else {
       this.parent?.transition('pointingCanvas', info);
     }
-  }
-}
-
-class SelectPointingDoor extends Tool {
-  static id = 'pointingDoor';
-  private door: { wall: Wall; segmentIndex: number } | null = null;
-  private pointer: CanvasPointerInfo | null = null;
-
-  override onEnter(info?: unknown): void {
-    const data = info as { door: { wall: Wall; segmentIndex: number }; pointer: CanvasPointerInfo };
-    this.door = data.door;
-    this.pointer = data.pointer;
-  }
-
-  override onPointerMove(): void {
-    // Portas são click-to-toggle: arrastar uma porta não move a wall
-    // (walls não têm position própria — os segmentos são coordenadas absolutas).
-  }
-
-  override onPointerUp(): void {
-    if (this.door) this.canvas.toggleDoor(this.door.wall, this.door.segmentIndex);
-    this.parent?.transition('idle');
   }
 }
 
@@ -123,7 +106,7 @@ class SelectPointingObject extends Tool {
   }
 
   override onPointerMove(): void {
-    if (this.inputs.isDragging && this.object) {
+    if (this.inputs.isDragging && this.object && isMovable(this.canvas, this.object)) {
       this.parent?.transition('dragging', this.object);
     }
   }
@@ -153,11 +136,12 @@ class SelectDragging extends Tool {
     this.startWorld = this.inputs.getCurrentWorldPoint();
     this.startPositions.clear();
     for (const obj of this.canvas.selected) {
-      if (obj.objectType === 'wall') continue;
+      if (!isMovable(this.canvas, obj)) continue;
       this.startPositions.set(obj.id, { x: obj.x, y: obj.y });
     }
     const primaryStart = this.primary ? this.startPositions.get(this.primary.id) : undefined;
-    this.measureFrom = this.primary?.objectType === 'token' && primaryStart ? { ...primaryStart } : null;
+    const wantsRuler = this.primary ? defOf(this.canvas, this.primary)?.behavior?.rulerOnDrag === true : false;
+    this.measureFrom = wantsRuler && primaryStart ? { ...primaryStart } : null;
     this.setCursor('grabbing');
   }
 
@@ -169,7 +153,7 @@ class SelectDragging extends Tool {
 
     const primaryStart = this.primary ? this.startPositions.get(this.primary.id) : undefined;
     let snapDelta: Point = { x: dx, y: dy };
-    if (this.primary && primaryStart && this.primary.objectType === 'token') {
+    if (this.primary && primaryStart && defOf(this.canvas, this.primary)?.behavior?.snapToGrid) {
       const snapped = this.snap({ x: primaryStart.x + dx, y: primaryStart.y + dy });
       snapDelta = { x: snapped.x - primaryStart.x, y: snapped.y - primaryStart.y };
     }
@@ -179,7 +163,7 @@ class SelectDragging extends Tool {
       if (!start) continue;
       const nx = start.x + snapDelta.x;
       const ny = start.y + snapDelta.y;
-      if (obj.objectType === 'token' && this.canvas.isMoveBlocked({ x: obj.x, y: obj.y }, { x: nx, y: ny })) {
+      if (defOf(this.canvas, obj)?.behavior?.collides && this.canvas.isMoveBlocked({ x: obj.x, y: obj.y }, { x: nx, y: ny })) {
         continue;
       }
       obj.position.set(nx, ny);
@@ -192,7 +176,7 @@ class SelectDragging extends Tool {
       this.preview.ruler(this.measureFrom.x, this.measureFrom.y, this.primary.x, this.primary.y, `${units.toFixed(1)} u`);
     }
     this.canvas.handles.refresh();
-    this.canvas.fog.compose();
+    this.canvas.bus.call('scene:refresh', {});
   }
 
   override onPointerUp(): void {
@@ -229,7 +213,7 @@ class SelectDragging extends Tool {
       this.canvas.reindex(obj);
     }
     this.canvas.handles.refresh();
-    this.canvas.fog.compose();
+    this.canvas.bus.call('scene:refresh', {});
   }
 }
 
@@ -283,18 +267,18 @@ class SelectMarquee extends Tool {
 
 class SelectPointingHandle extends Tool {
   static id = 'pointingHandle';
-  private handle: HandleInfo | null = null;
+  private handle: HandleEntry | null = null;
 
   override onEnter(info?: unknown): void {
-    this.handle = (info as HandleInfo) ?? null;
+    this.handle = (info as HandleEntry) ?? null;
     if (this.handle) this.setCursor(cursorForHandle(this.handle));
   }
 
   override onPointerMove(): void {
     if (this.inputs.isDragging && this.handle) {
-      if (this.handle.type === 'resize') this.parent?.transition('resizing', this.handle);
-      else if (this.handle.type === 'rotate') this.parent?.transition('rotating', this.handle);
-      else this.parent?.transition('draggingWallPoint', this.handle);
+      if (this.handle.info.type === 'resize') this.parent?.transition('resizing', this.handle);
+      else if (this.handle.info.type === 'rotate') this.parent?.transition('rotating', this.handle);
+      else this.parent?.transition('draggingCustomHandle', this.handle);
     }
   }
 
@@ -314,18 +298,22 @@ class SelectResizing extends Tool {
   private committed = false;
 
   override onEnter(info?: unknown): void {
-    const handle = info as { type: 'resize'; corner: HandleCorner };
+    const handle = info as HandleEntry;
+    const corner = 'corner' in handle.info ? (handle.info.corner as HandleCorner) : undefined;
     const aabb = this.canvas.handles.getAABB();
-    if (!aabb) {
+    if (!corner || !aabb) {
       this.parent?.transition('idle');
       return;
     }
     this.start = { width: Math.max(1, aabb.maxX - aabb.minX), height: Math.max(1, aabb.maxY - aabb.minY) };
     this.anchor = {
-      x: handle.corner === 'tl' || handle.corner === 'bl' ? aabb.maxX : aabb.minX,
-      y: handle.corner === 'tl' || handle.corner === 'tr' ? aabb.maxY : aabb.minY,
+      x: corner === 'tl' || corner === 'bl' ? aabb.maxX : aabb.minX,
+      y: corner === 'tl' || corner === 'tr' ? aabb.maxY : aabb.minY,
     };
-    this.snapshots = takeSnapshots(this.canvas.selected.filter((obj) => obj.objectType !== 'wall'));
+    this.snapshots = takeSnapshots(
+      this.canvas,
+      this.canvas.selected.filter((obj) => defOf(this.canvas, obj)?.transform !== undefined),
+    );
     this.changed = false;
     this.committed = false;
   }
@@ -343,18 +331,15 @@ class SelectResizing extends Tool {
     }
 
     for (const snap of this.snapshots) {
-      const minX = this.anchor.x + (snap.aabb.minX - this.anchor.x) * fx;
-      const minY = this.anchor.y + (snap.aabb.minY - this.anchor.y) * fy;
-      const width = snap.aabb.width * fx;
-      const height = snap.aabb.height * fy;
-      if (snap.obj.objectType === 'token') {
-        const cx = this.anchor.x + (snap.aabb.minX + snap.aabb.width / 2 - this.anchor.x) * fx;
-        const cy = this.anchor.y + (snap.aabb.minY + snap.aabb.height / 2 - this.anchor.y) * fy;
-        const diameter = snap.aabb.width * ((fx + fy) / 2);
-        snap.obj.update({ x: cx, y: cy, size: diameter / this.canvas.grid.size });
-      } else {
-        snap.obj.update({ x: minX, y: minY, width, height });
-      }
+      const rect = {
+        x: this.anchor.x + (snap.aabb.minX - this.anchor.x) * fx,
+        y: this.anchor.y + (snap.aabb.minY - this.anchor.y) * fy,
+        width: snap.aabb.width * fx,
+        height: snap.aabb.height * fy,
+      };
+      const changes = defOf(this.canvas, snap.obj)?.transform?.applyResize(snap.obj, rect);
+      if (!changes) continue;
+      snap.obj.update(changes);
       this.canvas.reindex(snap.obj);
       this.changed = true;
     }
@@ -366,7 +351,7 @@ class SelectResizing extends Tool {
     if (this.changed) {
       this.canvas.history.beginBatch();
       for (const snap of this.snapshots) {
-        const after = transformFields(snap.obj);
+        const after = transformFields(this.canvas, snap.obj);
         delete after.rotation;
         this.canvas.commitTransform(snap.obj, after, pickResizeBefore(snap.before));
       }
@@ -390,7 +375,7 @@ class SelectResizing extends Tool {
       this.canvas.reindex(snap.obj);
     }
     this.canvas.handles.refresh();
-    this.canvas.fog.compose();
+    this.canvas.bus.call('scene:refresh', {});
   }
 }
 
@@ -417,7 +402,10 @@ class SelectRotating extends Tool {
     this.center = { x: (aabb.minX + aabb.maxX) / 2, y: (aabb.minY + aabb.maxY) / 2 };
     const point = this.inputs.getCurrentWorldPoint();
     this.startAngle = Math.atan2(point.y - this.center.y, point.x - this.center.x);
-    this.snapshots = takeSnapshots(this.canvas.selected.filter((obj) => obj.objectType !== 'wall'));
+    this.snapshots = takeSnapshots(
+      this.canvas,
+      this.canvas.selected.filter((obj) => isMovable(this.canvas, obj)),
+    );
     this.changed = false;
     this.committed = false;
   }
@@ -472,87 +460,51 @@ class SelectRotating extends Tool {
       this.canvas.reindex(snap.obj);
     }
     this.canvas.handles.refresh();
-    this.canvas.fog.compose();
+    this.canvas.bus.call('scene:refresh', {});
   }
 }
 
-class SelectDraggingWallPoint extends Tool {
-  static id = 'draggingWallPoint';
-  private refs: WallPointRef[] = [];
-  private before = new Map<string, WallSegmentData[]>();
-  private moved = false;
-  private committed = false;
+/**
+ * Drag de handle customizado (contribuído por plugins via `handles:collect`).
+ * Delega o gesto ao plugin dono pelo hook `handle:drag` (fases start/move/end).
+ */
+class SelectDraggingCustomHandle extends Tool {
+  static id = 'draggingCustomHandle';
+  private handle: HandleInfo | null = null;
 
   override onEnter(info?: unknown): void {
-    const handle = info as { type: 'wall-point'; wallId: string; segmentIndex: number; role: WallPointRef['role'] };
-    const dragged: WallPointRef = { ...handle, x: 0, y: 0 };
-    const wall = this.canvas.walls.get(handle.wallId);
-    const seg = wall?.segments[handle.segmentIndex];
-    if (!wall || !seg) {
+    this.handle = (info as HandleEntry)?.info ?? null;
+    if (!this.handle) {
       this.parent?.transition('idle');
       return;
     }
-    dragged.x = handle.role === 'p1' ? seg.x1 : handle.role === 'p2' ? seg.x2 : handle.role === 'cp1' ? (seg.cp1x ?? seg.x1) : (seg.cp2x ?? seg.x2);
-    dragged.y = handle.role === 'p1' ? seg.y1 : handle.role === 'p2' ? seg.y2 : handle.role === 'cp1' ? (seg.cp1y ?? seg.y1) : (seg.cp2y ?? seg.y2);
-    this.refs = [dragged];
-    if (dragged.role === 'p1' || dragged.role === 'p2') {
-      this.refs.push(...this.canvas.walls.findCoincidentEndpoints(dragged.x, dragged.y, 1, dragged));
-    }
-    this.before.clear();
-    for (const ref of this.refs) {
-      if (this.before.has(ref.wallId)) continue;
-      const target = this.canvas.walls.get(ref.wallId);
-      if (target) this.before.set(ref.wallId, target.segments.map((s) => ({ ...s })));
-    }
-    this.moved = false;
-    this.committed = false;
-    this.setCursor('move');
+    const point = this.inputs.getCurrentWorldPoint();
+    this.drag(point, 'start', false);
   }
 
-  override onPointerMove(): void {
-    const raw = this.inputs.getCurrentWorldPoint();
-    for (const ref of this.refs) {
-      const wall = this.canvas.walls.get(ref.wallId);
-      if (!wall) continue;
-      const point = ref.role === 'p1' || ref.role === 'p2' ? this.snapIntersection(raw) : raw;
-      const seg = wall.segments[ref.segmentIndex];
-      const cur = ref.role === 'p1' ? { x: seg.x1, y: seg.y1 } : ref.role === 'p2' ? { x: seg.x2, y: seg.y2 } : ref.role === 'cp1' ? { x: seg.cp1x ?? seg.x1, y: seg.cp1y ?? seg.y1 } : { x: seg.cp2x ?? seg.x2, y: seg.cp2y ?? seg.y2 };
-      if (cur.x !== point.x || cur.y !== point.y) this.moved = true;
-      wall.update({
-        segments: wall.segments.map((s, i) => (i === ref.segmentIndex ? withPointAt(s, ref.role, point.x, point.y) : s)),
-      });
-      this.canvas.reindex(wall);
-    }
-    this.canvas.handles.refresh();
-    this.canvas.fog.compose();
-    this.canvas.lighting.compose();
+  override onPointerMove(info: CanvasPointerInfo): void {
+    const point = this.inputs.getCurrentWorldPoint();
+    this.drag(point, 'move', info.shiftKey);
   }
 
   override onPointerUp(): void {
-    this.committed = true;
-    if (this.moved) this.canvas.commitWallPoints(this.before);
-    this.parent?.transition('idle');
-  }
-
-  override onExit(): void {
-    if (this.moved && !this.committed) this.restore();
-  }
-
-  protected override onEscape(): void {
-    this.restore();
-    this.parent?.transition('idle');
-  }
-
-  private restore(): void {
-    for (const [wallId, segments] of this.before) {
-      const wall = this.canvas.walls.get(wallId);
-      if (!wall) continue;
-      wall.update({ segments: segments.map((s) => ({ ...s })) });
-      this.canvas.reindex(wall);
-    }
+    const point = this.inputs.getCurrentWorldPoint();
+    this.drag(point, 'end', false);
     this.canvas.handles.refresh();
-    this.canvas.fog.compose();
-    this.canvas.lighting.compose();
+    this.canvas.bus.call('scene:refresh', {});
+    this.parent?.transition('idle');
+  }
+
+  private drag(point: Point, phase: 'start' | 'move' | 'end', shiftKey: boolean): void {
+    if (!this.handle) return;
+    this.canvas.bus.call('handle:drag', {
+      handle: { type: this.handle.type, data: (this.handle as { data?: Record<string, unknown> }).data },
+      x: point.x,
+      y: point.y,
+      phase,
+      shiftKey,
+      handled: false,
+    });
   }
 }
 
@@ -569,8 +521,7 @@ export class SelectTool extends Tool {
       SelectPointingHandle,
       SelectResizing,
       SelectRotating,
-      SelectPointingDoor,
-      SelectDraggingWallPoint,
+      SelectDraggingCustomHandle,
     ];
   }
 
@@ -591,14 +542,16 @@ export class SelectTool extends Tool {
     };
     const dir = arrows[info.key];
     if (!dir) return;
-    const tokens = this.canvas.selected.filter((obj) => obj.objectType === 'token');
-    if (tokens.length === 0) return;
+    const movable = this.canvas.selected.filter(
+      (obj) => isMovable(this.canvas, obj) && defOf(this.canvas, obj)?.behavior?.snapToGrid,
+    );
+    if (movable.length === 0) return;
     const step = this.canvas.grid.size;
     this.canvas.history.beginBatch();
-    for (const obj of tokens) {
+    for (const obj of movable) {
       const from = { x: obj.x, y: obj.y };
       const to = { x: obj.x + dir.x * step, y: obj.y + dir.y * step };
-      if (this.canvas.isMoveBlocked(from, to)) continue;
+      if (defOf(this.canvas, obj)?.behavior?.collides && this.canvas.isMoveBlocked(from, to)) continue;
       obj.position.set(to.x, to.y);
       obj.refresh();
       this.canvas.reindex(obj);
@@ -606,18 +559,16 @@ export class SelectTool extends Tool {
     }
     this.canvas.history.endBatch();
     this.canvas.handles.refresh();
-    this.canvas.fog.compose();
+    this.canvas.bus.call('scene:refresh', {});
   }
 
   override onDoubleClick(info: CanvasPointerInfo): void {
-    if (info.target.type === 'object' && info.target.object.objectType === 'wall') {
-      const tolerance = 12 / (this.viewport?.scale ?? 1);
-      const hit = this.canvas.walls.findSegmentAt(info.point, tolerance);
-      if (hit && hit.wall === info.target.object) {
-        this.canvas.splitWall(hit.wall, hit.segmentIndex, info.point);
-        return;
-      }
-    }
+    const result = this.canvas.bus.call('select:doubleclick', {
+      x: info.point.x,
+      y: info.point.y,
+      handled: false,
+    });
+    if (result.handled) return;
     if (info.target.type === 'object') this.canvas.select(info.target.object, false);
   }
 }

@@ -1,86 +1,157 @@
 # @openvtt/canvas
 
-Framework-agnostic, PixiJS-powered game canvas for OpenVTT. Provides a Foundry-VTT-inspired API (`Canvas`, `CanvasLayer`, `PlaceablesLayer`, `PlaceableObject`) on top of PixiJS 8 + `pixi-viewport`, with no coupling to any UI framework.
+Framework-agnostic, PixiJS-powered game canvas for OpenVTT — **plugin-first**. O core fornece apenas infraestrutura (stage, viewport, input, state machine de tools, layers, histórico, seleção, bus de eventos/hooks). **Todo tipo de documento e toda capacidade do canvas é contribuída por plugins.**
 
-## Architectural boundary
-
-Pixi owns the scene tree; **no Pixi object ever leaves the canvas**. Everything that crosses the package boundary goes through `@openvtt/events` as **plain JSON**:
-
-- Pointer/camera events → `{ x, y, scale, button, ... }`
-- Object lifecycle → the same Valibot-validated data documents (`TokenData`, `TileData`, ...)
-- `token:moved` → `{ id: string, x: number, y: number }`
-
-This keeps the canvas consumable by any host (vanilla TS, React, a worker, a headless server) and makes every emitted payload directly compatible with `@openvtt/formula` (JSON-Logic-shaped) for downstream rules/automation.
-
-## Adopted libraries
-
-| Concern | Library | Where |
-| --- | --- | --- |
-| Identifiers | `uuid` v7 (`newId`) | all object/scene ids |
-| Schema validation | `valibot` | `schemas.ts` (scene/token/tile/drawing/wall) |
-| Events & hooks | `@openvtt/events` | `bus.ts` (`createCanvasBus`) |
-| Camera | `pixi-viewport` 6 | `CanvasViewport` (pan/zoom/pinch/clamp/follow) |
-| Spatial index | `rbush` 4 | `PlaceablesLayer` (`pick`, `pickRect` — O(log n) hit-testing) |
-| Selection FX | `pixi-filters` 6 (`GlowFilter`) | `PlaceableObject.refreshSelection` |
-
-> **`pixi-viewport` fork note:** the `@pixi-viewport/*` fork does not exist on npm (404). The live, Pixi-v8-compatible package is `pixi-viewport` (davidfig) `^6.0.3` — used here.
-
-## Public API (Foundry-flavoured)
+## Arquitetura
 
 ```
-Canvas                         main controller (Application + viewport + layers + bus)
-├─ background: BackgroundLayer
-├─ grid: GridLayer             square / hex-v / hex-h / isometric, snapToGrid, getCellShape
-├─ tiles: TileLayer            PlaceablesLayer<TileData, Tile>
-├─ drawings: DrawingsLayer     PlaceablesLayer<DrawingData, Drawing>
-├─ walls: WallsLayer           PlaceablesLayer<WallData, Wall>
-└─ tokens: TokenLayer          PlaceablesLayer<TokenData, Token>
+@openvtt/canvas (core)                    infra: stage/viewport/input/tools/layers/history/selection
+└─ canvas.use(plugin)                     PluginManager (deps, lifecycle, APIs)
+   ├─ DocumentRegistry                    registerDocumentType() → layer + eventos + histórico
+   ├─ Bus de capacidades (hooks)          movement/sight/vision/light/select/handles/scene
+   └─ @openvtt/events                     eventos dinâmicos registerEvent() por plugin
 
-CanvasLayer → InteractionLayer → PlaceablesLayer
-  objects: Map, placeables[], get(id), create(data), update(id, patch), delete(id), pick(point), pickRect(rect)
+Plugins (pacotes independentes):
+  @openvtt/canvas-plugin-tiles      tiles (fundo)
+  @openvtt/canvas-plugin-drawings   drawings (rect/ellipse/brush/text)
+  @openvtt/canvas-plugin-walls      walls, portas, curvas, blockers de movimento/visão
+  @openvtt/canvas-plugin-templates  templates de área (circle/cone/ray)
+  @openvtt/canvas-plugin-tokens     tokens, fontes de visão e luz
+  @openvtt/canvas-plugin-lights     luzes ambiente
+  @openvtt/canvas-plugin-measure    régua de medição
+  @openvtt/canvas-plugin-lighting   overlay de iluminação
+  @openvtt/canvas-plugin-fog        fog of war + painel de UI
 
-PlaceableObject → Token | Tile | Drawing | Wall
-  id, document, x/y/rotation, bounds, getAABB(), draw(), refresh(), update()
-
-CanvasViewport                 pan(), animatePan(), zoom(), fit(), centerOn(), toLocal/toScreen
-CanvasAnimation + Easing       animate({ duration, ease, onUpdate })
+@openvtt/canvas-preset-standard          1 import com todos os plugins acima
 ```
 
-## Usage
+## Boundary arquitetural
+
+Pixi é dono da scene tree; **nenhum objeto Pixi sai do canvas**. Tudo que cruza a fronteira passa pelo `@openvtt/events` como JSON puro, validado por Valibot — consumível por qualquer host (vanilla, React, worker, headless) e compatível com `@openvtt/formula`.
+
+## Quick start
 
 ```ts
-import { Canvas, newId, type SceneData } from '@openvtt/canvas';
+import { createStandardCanvas } from '@openvtt/canvas-preset-standard';
+import { defineCanvasElements } from '@openvtt/canvas';
 
-const canvas = new Canvas(document.querySelector('#stage')!);
+defineCanvasElements();
+const canvas = createStandardCanvas(container);
 await canvas.initialize();
-
-canvas.bus.tap('beforeDraw', 'log', (ctx) => { console.log('drawing scene'); return ctx; });
-canvas.on('token:moved', ({ id, x, y }) => console.log(id, x, y));
-
 await canvas.draw({
   width: 1600, height: 1000,
   grid: { type: 'square', size: 50 },
-  tokens: [{ id: newId(), x: 200, y: 200, size: 1, texture: '/tokens/hero.png', label: 'Hero' }],
+  documents: {
+    token: [{ x: 200, y: 200, label: 'Hero', visionRadius: 6 }],
+    wall: [{ segments: [{ x1: 0, y1: 300, x2: 600, y2: 300, door: true }] }],
+    light: [{ x: 400, y: 150, dim: 9, bright: 3, color: '#ffb35c' }],
+  },
 });
-
-await canvas.tokens.create({ x: 500, y: 500, size: 1, texture: '/tokens/goblin.png' });
-canvas.tokens.update('<id>', { x: 600, y: 600 });
 ```
 
-## Roadmap (subsystems & their libraries)
+Cena aceita chaves legadas (`tokens: [...]`, `walls: [...]`) ou o mapa `documents: { [type]: [...] }` — cada plugin declara seu `sceneKey`.
 
-These are tracked as future work, each isolated so the core stays lean:
+## Composição seletiva
 
-| Subsystem | Library | Why |
+```ts
+import { Canvas } from '@openvtt/canvas';
+import { tokensPlugin } from '@openvtt/canvas-plugin-tokens';
+import { wallsPlugin } from '@openvtt/canvas-plugin-walls';
+
+const canvas = new Canvas(container);
+await canvas.use(wallsPlugin);
+await canvas.use(tokensPlugin);
+await canvas.initialize();
+```
+
+## Criando um tipo de documento novo (plugin customizado)
+
+Qualquer documento é um plugin: schema Valibot + placeable + (opcional) tool/transform/behavior.
+
+```ts
+import * as v from 'valibot';
+import { definePlugin, PlaceableObject, Tool } from '@openvtt/canvas';
+
+const NoteSchema = v.object({
+  id: v.optional(v.pipe(v.string(), v.uuid())),
+  x: v.number(),
+  y: v.number(),
+  text: v.string(),
+});
+
+class Note extends PlaceableObject<{ x: number; y: number; text: string }> {
+  readonly objectType = 'note';
+  get bounds() { return { x: -8, y: -8, width: 16, height: 16 }; }
+  refresh(): void { /* desenha o pin */ }
+}
+
+export const notesPlugin = definePlugin({
+  id: 'notes',
+  install(ctx) {
+    ctx.registerDocumentType({
+      type: 'note',
+      schema: NoteSchema,
+      placeable: Note,
+      layer: { label: 'Notes', order: 600 },
+      sceneKey: 'notes',
+    });
+  },
+});
+```
+
+Com isso você ganha de graça: layer com spatial index (pick/pickRect), eventos `note:create|update|delete` (registrados e validados no bus), histórico/undo, seleção/handles, marquee, eraser, e leitura da cena via `scene.notes` ou `documents.note`. Opcionalmente: `ctx.registerTool({ tool, hotkey })`, `transform` (resize/rotate), `behavior` (snapToGrid/collides/rulerOnDrag), taps nos hooks abaixo.
+
+## Hooks de capacidades (plugins conversam pelo bus, não entre si)
+
+| Hook | Estratégia | Contrato |
 | --- | --- | --- |
-| Tile-based maps | `@pixi/tilemap` | thousands of tiles in a single draw call (Dungeondraft/Tiled style); not needed for single-image maps |
-| Line-of-sight / fog of war | `polygon-clipping` | robust union/intersect/subtract for vision polygons + incremental fog exploration |
-| Vision/fog off-main-thread | `comlink` | RPC over Web Worker; the geometry is pure and headless-runnable |
-| Large map textures | KTX2/Basis | GPU-compressed textures for 8k×8k maps, declared per-platform via `@openvtt/assets` |
-| Static geometry index | `flatbush` | bulk-loaded R-tree for walls/regions (rbush is used today because tokens move) |
+| `beforeDraw` | syncWaterfall | `{ scene }` — transforma/valida a cena |
+| `scene:setup` / `scene:teardown` / `scene:refresh` | sync | ciclo de vida e recomposição de overlays |
+| `movement:segments` | syncWaterfall | taps anexam `{a,b}` bloqueadores; core testa colisão |
+| `sight:segments` | syncWaterfall | taps anexam segmentos que bloqueiam visão |
+| `vision:sources` | syncWaterfall | taps anexam `{x,y,radius}` (ex.: tokens) |
+| `light:sources` | syncWaterfall | taps anexam `{x,y,dim,bright,color?}` |
+| `select:pointerdown` / `select:hovercursor` / `select:doubleclick` | syncBail | interceptação da Select tool (ex.: portas) |
+| `handles:collect` | syncWaterfall | handles custom da seleção (ex.: pontos de wall) |
+| `handle:drag` | syncBail | gesto de drag de handle custom (start/move/end) |
 
-The vision/fog worker will emit results back through `@openvtt/events` (plain JSON), never leaking Pixi objects.
+Fog/lighting **não conhecem** tokens/walls: consomem `vision:sources`/`light:sources`/`sight:segments`. Walls contribui blockers. Tokens contribui fontes. Composição sem acoplamento.
 
-## License
+## Eventos
 
-MIT
+Core: `ready`, `destroy`, `pan`, `zoom`, `pointerdown/move/up`, `ping`, `tool:changed`, `history:change`, `layers:change`, `selection:change`, `plugin:registered`, `document:type|create|update|delete|moved`.
+
+Plugins registram os seus dinamicamente (`token:moved`, `measure`, `fog:change`, `lighting:change`, ...) com schema Valibot via `ctx.bus.registerEvent`.
+
+## API central
+
+```
+Canvas
+├─ use(plugin) / plugins.get(id) / plugins.list()
+├─ documents: DocumentRegistry
+|    create(type, data) · update(type, id, changes) · delete(type, id)
+|    get(type, id) · layer(type) · types() · createFromScene(scene)
+├─ layers: LayerManager            visible/opacity/locked/order, reordenação
+├─ tools: ToolManager              options por tool (defaults dos plugins), hotkeys
+├─ bus: CanvasBus                  eventos + hooks (@openvtt/events)
+├─ select/clearSelection/selected  seleção genérica sobre o registry
+├─ isMoveBlocked(from, to)         colisão via hook movement:segments
+├─ grid: GridLayer                 square/hex-v/hex-h/isometric, snap
+├─ viewport: CanvasViewport        pan/zoom/fit/centerOn/toLocal/toScreen
+└─ history: HistoryManager         undo/redo em batch, ligado ao registry
+
+PlaceablesLayer (genérica)         create com validação de schema, RBush pick/pickRect,
+|                                  eventos <type>:* + document:*, onMutate → histórico
+PlaceableObject                    id, document, x/y/rotation, bounds, getAABB, refresh
+```
+
+## Libs adotadas
+
+| Concern | Library |
+| --- | --- |
+| IDs | `uuid` v7 (`newId`) |
+| Schemas | `valibot` (core + plugins) |
+| Eventos/hooks | `@openvtt/events` (`createBus`, `registerEvent`/`registerHook`) |
+| Câmera | `pixi-viewport` 6 |
+| Spatial index | `rbush` 4 |
+| Selection FX | `pixi-filters` 6 (`GlowFilter`) |

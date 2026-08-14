@@ -4,13 +4,34 @@ import { CONFIG } from '../config';
 import type { Canvas } from '../canvas';
 import type { PlaceableObject } from '../placeables/PlaceableObject';
 import type { Point } from '../input/types';
-import { wallPointRoles, type WallPointRole } from '../layers/WallsLayer';
 
 export type HandleCorner = 'tl' | 'tr' | 'bl' | 'br';
-export type HandleInfo =
+
+/** Handles nativos do core (resize/rotação). */
+export type CoreHandleInfo =
   | { type: 'resize'; corner: HandleCorner }
-  | { type: 'rotate' }
-  | { type: 'wall-point'; wallId: string; segmentIndex: number; role: WallPointRole };
+  | { type: 'rotate' };
+
+/**
+ * Handle customizado contribuído por plugins via hook `handles:collect`
+ * (ex.: pontos/curvas de wall). `data` é opaco para o core — o plugin dono
+ * interpreta durante o gesto via hook `handle:drag`.
+ */
+export interface CustomHandleInfo {
+  type: string;
+  data?: Record<string, unknown>;
+}
+
+export type HandleInfo = CoreHandleInfo | CustomHandleInfo;
+
+/** Handle desenhável/pegável, com posição e aparência. */
+export interface HandleEntry {
+  info: HandleInfo;
+  x: number;
+  y: number;
+  shape: 'square' | 'circle' | 'rotate';
+  cursor?: string;
+}
 
 export interface AABB {
   minX: number;
@@ -23,27 +44,23 @@ const HANDLE_SCREEN = 10;
 const HIT_PAD_SCREEN = 4;
 const ROTATE_OFFSET_SCREEN = 26;
 
-export function isTransformable(obj: PlaceableObject): boolean {
-  if (obj.objectType === 'token' || obj.objectType === 'tile') return true;
-  if (obj.objectType === 'drawing') {
-    const type = (obj.document as { type?: string }).type;
-    return type === 'rect' || type === 'ellipse';
-  }
-  return false;
+/** Um objeto é transformável quando o seu tipo declara um TransformAdapter. */
+export function isTransformable(canvas: Canvas, obj: PlaceableObject): boolean {
+  return canvas.documents.definition(obj.objectType)?.transform !== undefined;
 }
 
 /**
  * Camada de handles da seleção: caixa delimitadora, cantos de resize e handle
- * de rotação. Desenhada em espaço de mundo, com tamanho contra-escalado pelo
- * zoom para parecer constante na tela. Nunca interativa — o hit-test dos
- * handles é feito pela SelectTool via `pickHandle`.
+ * de rotação (core), mais handles customizados contribuídos por plugins.
+ * Desenhada em espaço de mundo, com tamanho contra-escalado pelo zoom.
+ * Nunca interativa — o hit-test é feito pela SelectTool via `pickHandle`.
  */
 export class HandlesLayer extends CanvasLayer {
   private readonly canvas: Canvas;
   readonly graphics = new Graphics();
 
   constructor(canvas: Canvas) {
-    super({ name: 'handles', zIndex: 6000, interactive: false });
+    super({ name: 'handles', zIndex: 1100, interactive: false });
     this.canvas = canvas;
     this.graphics.eventMode = 'none';
     this.addChild(this.graphics);
@@ -74,56 +91,46 @@ export class HandlesLayer extends CanvasLayer {
 
   get transformable(): boolean {
     const objects = this.canvas.selected;
-    return objects.length > 0 && objects.every(isTransformable);
+    return objects.length > 0 && objects.every((obj) => isTransformable(this.canvas, obj));
   }
 
-  handles(): { info: HandleInfo; x: number; y: number }[] {
+  /** Handles do core: resize nos cantos + rotação acima da caixa. */
+  coreHandles(): HandleEntry[] {
     const aabb = this.getAABB();
     if (!aabb || !this.transformable) return [];
     const cx = (aabb.minX + aabb.maxX) / 2;
     const rotY = aabb.minY - ROTATE_OFFSET_SCREEN / this.viewScale;
     return [
-      { info: { type: 'resize', corner: 'tl' }, x: aabb.minX, y: aabb.minY },
-      { info: { type: 'resize', corner: 'tr' }, x: aabb.maxX, y: aabb.minY },
-      { info: { type: 'resize', corner: 'bl' }, x: aabb.minX, y: aabb.maxY },
-      { info: { type: 'resize', corner: 'br' }, x: aabb.maxX, y: aabb.maxY },
-      { info: { type: 'rotate' }, x: cx, y: rotY },
+      { info: { type: 'resize', corner: 'tl' }, x: aabb.minX, y: aabb.minY, shape: 'square' },
+      { info: { type: 'resize', corner: 'tr' }, x: aabb.maxX, y: aabb.minY, shape: 'square' },
+      { info: { type: 'resize', corner: 'bl' }, x: aabb.minX, y: aabb.maxY, shape: 'square' },
+      { info: { type: 'resize', corner: 'br' }, x: aabb.maxX, y: aabb.maxY, shape: 'square' },
+      { info: { type: 'rotate' }, x: cx, y: rotY, shape: 'rotate' },
     ];
   }
 
-  /** Endpoints e pontos de controle das walls selecionadas. */
-  wallPointHandles(): { info: HandleInfo & { type: 'wall-point' }; x: number; y: number }[] {
-    const result: { info: HandleInfo & { type: 'wall-point' }; x: number; y: number }[] = [];
-    for (const obj of this.canvas.selected) {
-      if (obj.objectType !== 'wall') continue;
-      const wall = this.canvas.walls.get(obj.id);
-      if (!wall) continue;
-      wall.segments.forEach((seg, segmentIndex) => {
-        for (const role of wallPointRoles(seg)) {
-          const x = role === 'p1' ? seg.x1 : role === 'p2' ? seg.x2 : role === 'cp1' ? (seg.cp1x ?? seg.x1) : (seg.cp2x ?? seg.x2);
-          const y = role === 'p1' ? seg.y1 : role === 'p2' ? seg.y2 : role === 'cp1' ? (seg.cp1y ?? seg.y1) : (seg.cp2y ?? seg.y2);
-          result.push({ info: { type: 'wall-point', wallId: wall.id, segmentIndex, role }, x, y });
-        }
-      });
-    }
-    return result;
+  /** Handles customizados contribuídos pelos plugins (hook handles:collect). */
+  customHandles(): HandleEntry[] {
+    const result = this.canvas.bus.call('handles:collect', { handles: [] });
+    return result.handles.map((h) => ({
+      info: { type: h.type, data: (h as Record<string, unknown>).data as Record<string, unknown> | undefined },
+      x: h.x,
+      y: h.y,
+      shape: h.shape ?? 'circle',
+      cursor: h.cursor,
+    }));
   }
 
-  pickHandle(point: Point): HandleInfo | null {
+  allHandles(): HandleEntry[] {
+    return [...this.customHandles(), ...this.coreHandles()];
+  }
+
+  pickHandle(point: Point): HandleEntry | null {
     if (this.canvas.interactionDisabled) return null;
     if (this.canvas.getCurrentToolId() !== 'select') return null;
     const tol = (HANDLE_SCREEN / 2 + HIT_PAD_SCREEN) / this.viewScale;
-    for (const handle of this.wallPointHandles()) {
-      if (Math.abs(point.x - handle.x) <= tol && Math.abs(point.y - handle.y) <= tol) return handle.info;
-    }
-    for (const handle of this.handles()) {
-      if (handle.info.type === 'rotate') {
-        const dx = point.x - handle.x;
-        const dy = point.y - handle.y;
-        if (dx * dx + dy * dy <= tol * tol) return handle.info;
-      } else if (Math.abs(point.x - handle.x) <= tol && Math.abs(point.y - handle.y) <= tol) {
-        return handle.info;
-      }
+    for (const handle of this.allHandles()) {
+      if (Math.abs(point.x - handle.x) <= tol && Math.abs(point.y - handle.y) <= tol) return handle;
     }
     return null;
   }
@@ -137,20 +144,18 @@ export class HandlesLayer extends CanvasLayer {
     if (!aabb) return;
     const lw = 1.5 / this.viewScale;
     const color = CONFIG.selection.color;
+    const hs = HANDLE_SCREEN / this.viewScale;
     g.rect(aabb.minX, aabb.minY, aabb.maxX - aabb.minX, aabb.maxY - aabb.minY).stroke({
       color,
       width: lw,
       alpha: 0.9,
     });
-    this.refreshWallPoints();
-    if (!this.transformable) return;
-    const hs = HANDLE_SCREEN / this.viewScale;
-    for (const handle of this.handles()) {
-      if (handle.info.type === 'resize') {
+    for (const handle of this.allHandles()) {
+      if (handle.shape === 'square') {
         g.rect(handle.x - hs / 2, handle.y - hs / 2, hs, hs)
           .fill(0xffffff)
           .stroke({ color, width: lw });
-      } else {
+      } else if (handle.shape === 'rotate') {
         const r = hs / 2;
         g.moveTo(handle.x, aabb.minY)
           .lineTo(handle.x, handle.y + r)
@@ -158,24 +163,10 @@ export class HandlesLayer extends CanvasLayer {
         g.circle(handle.x, handle.y, r)
           .fill(0xffffff)
           .stroke({ color, width: lw });
-      }
-    }
-  }
-
-  private refreshWallPoints(): void {
-    const g = this.graphics;
-    const color = CONFIG.selection.color;
-    const lw = 1.5 / this.viewScale;
-    const hs = HANDLE_SCREEN / this.viewScale;
-    for (const handle of this.wallPointHandles()) {
-      if (handle.info.role === 'p1' || handle.info.role === 'p2') {
+      } else {
         g.circle(handle.x, handle.y, hs / 2)
           .fill(0xffffff)
           .stroke({ color, width: lw });
-      } else {
-        g.rect(handle.x - hs / 2, handle.y - hs / 2, hs, hs)
-          .fill({ color: 0x1a1610, alpha: 0.9 })
-          .stroke({ color: 0xf0c168, width: lw });
       }
     }
   }

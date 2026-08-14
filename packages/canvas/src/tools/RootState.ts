@@ -1,43 +1,28 @@
-import { StateNode } from '../state/StateNode';
+import { StateNode, type StateNodeConstructor } from '../state/StateNode';
 import type { CanvasKeyInfo, CanvasPinchInfo, CanvasPointerInfo, CanvasWheelInfo } from '../input/types';
 import { SelectTool } from './select';
 import { HandTool } from './hand';
-import { DrawTool, ShapeTool, TileTool, TokenTool, WallTool } from './create';
-import { MeasureTool } from './measure';
 import { EraserTool } from './eraser';
-import { FogPaintTool, FogRevealTool } from './fog';
-import { LightTool } from './light';
-import { TemplateTool } from './template';
 
 /**
  * Raiz da máquina de estados. Contém as tools como children e cuida da
  * navegação global (wheel, pinch) e dos pans temporários (espaço / botão do meio).
+ * Tools de plugins entram via `extraTools`/`extraHotkeys` (preenchidos pelo
+ * ToolManager antes da construção).
  */
 export class RootState extends StateNode {
   static id = 'root';
   static initial = 'select';
+
+  static extraTools: StateNodeConstructor[] = [];
+  static extraHotkeys: Record<string, string> = {};
+
   static children() {
-    return [SelectTool, HandTool, TokenTool, WallTool, TileTool, DrawTool, ShapeTool, MeasureTool, EraserTool, FogRevealTool, FogPaintTool, LightTool, TemplateTool];
+    return [SelectTool, HandTool, EraserTool, ...RootState.extraTools];
   }
 
   private tempReturnTo: string | null = null;
   private tempMiddle = false;
-
-  private static readonly HOTKEYS: Record<string, string> = {
-    v: 'select',
-    h: 'hand',
-    t: 'token',
-    w: 'wall',
-    i: 'tile',
-    d: 'draw',
-    s: 'shape',
-    m: 'measure',
-    e: 'eraser',
-    f: 'fogReveal',
-    g: 'fogPaint',
-    l: 'light',
-    b: 'template',
-  };
 
   override onWheel(info: CanvasWheelInfo): void {
     this.canvas.viewport?.applyWheel(info.screenPoint, info.delta, info.zoom);
@@ -52,9 +37,6 @@ export class RootState extends StateNode {
       this.tempReturnTo = this.current?.id ?? 'select';
       this.tempMiddle = true;
       this.transition('hand');
-    }
-    if (info.button === 2 && info.ctrlKey && this.current?.id !== 'select') {
-      this.transition('select');
     }
   }
 
@@ -92,7 +74,7 @@ export class RootState extends StateNode {
         this.canvas.ping(point.x, point.y);
         return;
       }
-      const tool = RootState.HOTKEYS[key];
+      const tool = RootState.extraHotkeys[key];
       if (tool) this.transition(tool);
     }
   }

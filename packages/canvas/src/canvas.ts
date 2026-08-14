@@ -6,30 +6,21 @@ import { CanvasViewport } from './viewport';
 import { CanvasAnimation, Easing } from './animation';
 import { InputsManager } from './input/InputsManager';
 import type { CanvasPointerInfo, Point } from './input/types';
-import { ToolManager } from './tools/ToolManager';
-import type { ToolOptions } from './tools/Tool';
+import { ToolManager, type ToolOptions } from './tools/ToolManager';
 import type { StateEventName } from './state/StateNode';
 import { PreviewLayer } from './preview/PreviewLayer';
 import { HandlesLayer } from './handles/HandlesLayer';
 import { HistoryManager } from './history/HistoryManager';
-import { FogOfWarLayer } from './fog/FogOfWarLayer';
-import { LightingFxLayer } from './lighting/LightingFxLayer';
 import { LayerManager } from './layers/LayerManager';
 import { BackgroundLayer } from './layers/BackgroundLayer';
 import { GridLayer } from './layers/GridLayer';
-import { TileLayer } from './layers/TileLayer';
-import { DrawingsLayer } from './layers/DrawingsLayer';
-import { WallsLayer } from './layers/WallsLayer';
-import { TokenLayer } from './layers/TokenLayer';
-import { LightsLayer } from './layers/LightsLayer';
-import { TemplatesLayer } from './layers/TemplatesLayer';
 import type { PlaceablesLayer } from './layers/PlaceablesLayer';
 import type { PlaceableObject, CanvasLike } from './placeables/PlaceableObject';
-import type { Wall } from './placeables/Wall';
-import { parseScene, type SceneData, type SceneDataInput, type WallDataInput, type WallSegmentData } from './schemas';
+import { parseScene, type SceneData, type SceneDataInput } from './schemas';
 import { segmentsIntersect, toHex } from './utils';
-import { chainSegments, ellipsePoints, flattenSegment, pointToCurveDistance, rectPoints, splitSegment } from './geometry';
-import { withPointAt, type WallPointRef } from './layers/WallsLayer';
+import { DocumentRegistry } from './documents';
+import { PluginManager } from './plugins/PluginManager';
+import type { CanvasPlugin, ToolContribution } from './plugins/types';
 
 export interface CanvasOptions {
   background?: number | string;
@@ -37,11 +28,28 @@ export interface CanvasOptions {
   maxScale?: number;
   resolution?: number;
   antialias?: boolean;
-  tools?: Partial<ToolOptions>;
+  tools?: ToolOptions;
+  /** Plugins instalados automaticamente antes do initialize(). */
+  plugins?: CanvasPlugin[];
 }
 
 type AnyPlaceablesLayer = PlaceablesLayer<any, PlaceableObject<any>, any>;
 
+/** Ordens de empilhamento do core (plugins usam a faixa 10–900). */
+export const CORE_LAYER_ORDER = {
+  background: 0,
+  grid: 950,
+  preview: 1000,
+  handles: 1100,
+} as const;
+
+/**
+ * Núcleo do canvas, plugin-first: o core fornece stage/viewport/input,
+ * máquina de estados de tools, layers, histórico, seleção e o barramento de
+ * eventos/hooks. Todo tipo de documento (token, wall, light, ...) e toda
+ * capacidade (fog, iluminação, medição) é contribuída por plugins via
+ * `canvas.use(plugin)`.
+ */
 export class Canvas implements CanvasLike {
   static instance: Canvas | null = null;
 
@@ -50,28 +58,24 @@ export class Canvas implements CanvasLike {
   readonly animation: CanvasAnimation;
   readonly stage: Container;
 
+  readonly documents: DocumentRegistry;
+  readonly plugins: PluginManager;
+
   viewport: CanvasViewport | null = null;
   inputs!: InputsManager;
   tools!: ToolManager;
 
   background: BackgroundLayer;
   grid: GridLayer;
-  tiles: TileLayer;
-  drawings: DrawingsLayer;
-  walls: WallsLayer;
-  tokens: TokenLayer;
-  lights: LightsLayer;
-  templates: TemplatesLayer;
   preview: PreviewLayer;
   handles: HandlesLayer;
-  fog: FogOfWarLayer;
-  lighting: LightingFxLayer;
   layers: LayerManager;
   history!: HistoryManager;
 
   private readonly container: HTMLElement;
   private readonly options: CanvasOptions;
   private readonly _selection = new Set<string>();
+  private readonly pendingTools: ToolContribution[] = [];
   private scene: SceneData | null = null;
   private _interactionDisabled = false;
   private _blurred = false;
@@ -89,22 +93,23 @@ export class Canvas implements CanvasLike {
     this.stage.label = 'openvtt-canvas';
     this.background = new BackgroundLayer({
       name: 'background',
-      zIndex: -1000,
+      zIndex: 0,
       backgroundColor: options.background ?? CONFIG.background,
     });
-    this.grid = new GridLayer({ name: 'grid', zIndex: 1000, grid: this.defaultGrid() });
-    this.tiles = new TileLayer(this);
-    this.drawings = new DrawingsLayer(this);
-    this.walls = new WallsLayer(this);
-    this.tokens = new TokenLayer(this);
-    this.lights = new LightsLayer(this);
-    this.templates = new TemplatesLayer(this);
-    this.preview = new PreviewLayer({ name: 'preview', zIndex: 5000 }, this);
+    this.grid = new GridLayer({ name: 'grid', zIndex: 950, grid: this.defaultGrid() });
+    this.preview = new PreviewLayer({ name: 'preview', zIndex: 1000 }, this);
     this.handles = new HandlesLayer(this);
-    this.fog = new FogOfWarLayer(this);
-    this.lighting = new LightingFxLayer(this);
     this.layers = new LayerManager(this);
+    this.documents = new DocumentRegistry(this);
+    this.plugins = new PluginManager(this);
     this.animation = new CanvasAnimation(this.app.ticker);
+
+    for (const layer of [this.background, this.grid, this.preview, this.handles]) {
+      this.stage.addChild(layer);
+    }
+    this.layers.register('background', 'Background', this.background, { order: CORE_LAYER_ORDER.background });
+    this.layers.register('grid', 'Grid', this.grid, { order: CORE_LAYER_ORDER.grid });
+
     Canvas.instance = this;
   }
 
@@ -116,6 +121,19 @@ export class Canvas implements CanvasLike {
       alpha: CONFIG.grid.alpha,
       lineWidth: CONFIG.grid.lineWidth,
     };
+  }
+
+  /* ------------------------------ plugins ------------------------------ */
+
+  /** Instala um plugin. Chame antes de `initialize()`. */
+  use(plugin: CanvasPlugin): Promise<this> {
+    return this.plugins.use(plugin).then(() => this);
+  }
+
+  /** Registro direto de tool (atalho para o que PluginContext.registerTool faz). */
+  registerTool(contribution: ToolContribution): void {
+    if (this.tools) throw new Error('[canvas] registerTool must be called before initialize()');
+    this.pendingTools.push(contribution);
   }
 
   get selection(): Set<string> {
@@ -135,20 +153,22 @@ export class Canvas implements CanvasLike {
   }
 
   select(obj: PlaceableObject<any>, additive: boolean): void {
-    if (!additive) this.clearSelection();
+    if (!additive) this.clearSelection(false);
     if (this._selection.has(obj.id) && additive) this._selection.delete(obj.id);
     else this._selection.add(obj.id);
     this.refreshSelection();
-    if (obj.objectType === 'token') this.bus.emit('token:selected', { ids: [...this._selection] });
+    this.bus.emit('selection:change', { ids: [...this._selection] });
   }
 
-  clearSelection(): void {
+  clearSelection(emit = true): void {
+    const had = this._selection.size > 0;
     this._selection.clear();
     this.refreshSelection();
+    if (emit && had) this.bus.emit('selection:change', { ids: [] });
   }
 
   refreshSelection(): void {
-    for (const layer of [this.tokens, this.tiles, this.drawings, this.walls, this.lights, this.templates]) {
+    for (const layer of this.documents.layers()) {
       for (const obj of layer.placeables) obj.refresh();
     }
     this.handles?.refresh();
@@ -157,12 +177,7 @@ export class Canvas implements CanvasLike {
   get selected(): PlaceableObject[] {
     const result: PlaceableObject[] = [];
     for (const id of this._selection) {
-      const obj = this.tokens.get(id)
-        ?? this.lights.get(id)
-        ?? this.templates.get(id)
-        ?? this.tiles.get(id)
-        ?? this.drawings.get(id)
-        ?? this.walls.get(id);
+      const obj = this.documents.findAny(id);
       if (obj) result.push(obj);
     }
     return result;
@@ -197,7 +212,7 @@ export class Canvas implements CanvasLike {
   /* --------------------------- hit-testing --------------------------- */
 
   private placeableLayers(): AnyPlaceablesLayer[] {
-    return [this.tokens, this.lights, this.templates, this.drawings, this.walls, this.tiles] as unknown as AnyPlaceablesLayer[];
+    return this.documents.layersTopDown();
   }
 
   pick(point: Point): PlaceableObject | undefined {
@@ -225,31 +240,12 @@ export class Canvas implements CanvasLike {
   }
 
   reindex(obj: PlaceableObject): void {
-    this.layerForType(obj.objectType)?.reindex(obj);
-  }
-
-  private layerForType(type: string): AnyPlaceablesLayer | undefined {
-    switch (type) {
-      case 'token':
-        return this.tokens as unknown as AnyPlaceablesLayer;
-      case 'tile':
-        return this.tiles as unknown as AnyPlaceablesLayer;
-      case 'drawing':
-        return this.drawings as unknown as AnyPlaceablesLayer;
-      case 'wall':
-        return this.walls as unknown as AnyPlaceablesLayer;
-      case 'light':
-        return this.lights as unknown as AnyPlaceablesLayer;
-      case 'template':
-        return this.templates as unknown as AnyPlaceablesLayer;
-      default:
-        return undefined;
-    }
+    this.documents.layer(obj.objectType)?.reindex(obj);
   }
 
   commitMove(obj: PlaceableObject): void {
-    this.layerForType(obj.objectType)?.update(obj.id, { x: obj.x, y: obj.y });
-    if (obj.objectType === 'token') this.bus.emit('token:moved', { id: obj.id, x: obj.x, y: obj.y });
+    this.documents.layer(obj.objectType)?.update(obj.id, { x: obj.x, y: obj.y });
+    this.bus.emit('document:moved', { type: obj.objectType, id: obj.id, x: obj.x, y: obj.y });
     this.handles?.refresh();
   }
 
@@ -258,13 +254,13 @@ export class Canvas implements CanvasLike {
    * capturado no início do gesto (o doc já foi mutado durante o arraste).
    */
   commitTransform(obj: PlaceableObject, changes: Record<string, unknown>, before: Record<string, unknown>): void {
-    this.layerForType(obj.objectType)?.update(obj.id, changes, { before });
+    this.documents.layer(obj.objectType)?.update(obj.id, changes, { before });
     this.handles?.refresh();
   }
 
   deleteObject(obj: PlaceableObject): boolean {
     this._selection.delete(obj.id);
-    const deleted = this.layerForType(obj.objectType)?.delete(obj.id) ?? false;
+    const deleted = this.documents.delete(obj.objectType, obj.id);
     this.refreshSelection();
     return deleted;
   }
@@ -274,214 +270,18 @@ export class Canvas implements CanvasLike {
     this.clearSelection();
   }
 
-  /* --------------------- portas e colisão (estilo Foundry) --------------------- */
+  /* --------------------------- movimento --------------------------- */
 
-  /** Porta (wall + índice do segmento) próxima ao ponto, dentro da tolerância. */
-  findDoor(point: Point, tolerance: number): { wall: Wall; segmentIndex: number } | null {
-    let best: { wall: Wall; segmentIndex: number; dist: number } | null = null;
-    for (const wall of this.walls.placeables) {
-      if (!this.layers.isInteractive(this.walls)) continue;
-      wall.segments.forEach((seg, index) => {
-        if (!seg.door) return;
-        const dist = pointToCurveDistance(point, seg).distance;
-        if (dist <= tolerance && (!best || dist < best.dist)) best = { wall, segmentIndex: index, dist };
-      });
-    }
-    return best;
+  /** Segmentos bloqueadores de movimento, contribuídos pelos plugins (ex.: walls). */
+  movementSegments(from: Point, to: Point): { a: Point; b: Point }[] {
+    const result = this.bus.call('movement:segments', { from, to, segments: [] });
+    return result.segments;
   }
 
-  /** Abre/fecha uma porta. Grava no histórico e atualiza fog/iluminação via wall:update. */
-  toggleDoor(wall: Wall, segmentIndex: number): void {
-    const segments = wall.segments.map((seg, i) =>
-      i === segmentIndex ? { ...seg, doorOpen: !(seg.doorOpen ?? false) } : seg,
-    );
-    this.walls.update(wall.id, { segments });
-  }
-
-  /** Marca/desmarca uma porta como secreta (Monk's Wall Enhancement: ctrl+right-click). */
-  toggleSecret(wall: Wall, segmentIndex: number): void {
-    const segments = wall.segments.map((seg, i) =>
-      i === segmentIndex && seg.door ? { ...seg, secret: !(seg.secret ?? false) } : seg,
-    );
-    this.walls.update(wall.id, { segments });
-  }
-
-  /** Fecha todas as portas da cena em uma única entrada de histórico. */
-  closeAllDoors(): void {
-    this.history.beginBatch();
-    for (const wall of this.walls.placeables) {
-      if (!wall.segments.some((seg) => seg.door && seg.doorOpen)) continue;
-      const segments = wall.segments.map((seg) => (seg.door ? { ...seg, doorOpen: false } : seg));
-      this.walls.update(wall.id, { segments });
-    }
-    this.history.endBatch();
-  }
-
-  /** Divide uma wall em duas no ponto mais próximo do clique (De Casteljau para curvas). */
-  splitWall(wall: Wall, segmentIndex: number, point: Point): void {
-    const seg = wall.segments[segmentIndex];
-    if (!seg) return;
-    const { t } = pointToCurveDistance(point, seg);
-    if (t <= 0.02 || t >= 0.98) return;
-    const [first, second] = splitSegment(seg, t);
-    const before = wall.segments.slice(0, segmentIndex);
-    const after = wall.segments.slice(segmentIndex + 1);
-    this._selection.delete(wall.id);
-    this.refreshSelection();
-    this.history.beginBatch();
-    void (async () => {
-      try {
-        this.walls.delete(wall.id);
-        const head = [...before, first];
-        const tail = [second, ...after];
-        if (head.length > 0) await this.walls.create({ segments: head });
-        if (tail.length > 0) await this.walls.create({ segments: tail });
-      } finally {
-        this.history.endBatch();
-      }
-    })();
-  }
-
-  /**
-   * Aproxima junções próximas: agrupa endpoints dentro da tolerância e os move
-   * para o centroide do grupo (Monk's Wall Enhancement: Join Points).
-   */
-  joinWallEndpoints(tolerance = 8): number {
-    const selected = new Set(this._selection);
-    const refs = this.walls
-      .listPoints(selected.size > 0 ? selected : undefined)
-      .filter((ref) => ref.role === 'p1' || ref.role === 'p2');
-    const parent = refs.map((_, i) => i);
-    const find = (i: number): number => {
-      while (parent[i] !== i) {
-        parent[i] = parent[parent[i]];
-        i = parent[i];
-      }
-      return i;
-    };
-    for (let i = 0; i < refs.length; i++) {
-      for (let j = i + 1; j < refs.length; j++) {
-        if (Math.hypot(refs[i].x - refs[j].x, refs[i].y - refs[j].y) <= tolerance) {
-          parent[find(i)] = find(j);
-        }
-      }
-    }
-    const clusters = new Map<number, WallPointRef[]>();
-    refs.forEach((ref, i) => {
-      const root = find(i);
-      const cluster = clusters.get(root) ?? [];
-      cluster.push(ref);
-      clusters.set(root, cluster);
-    });
-    const targets = new Map<string, { x: number; y: number }>();
-    let joined = 0;
-    for (const cluster of clusters.values()) {
-      const distinct = new Set(cluster.map((ref) => `${Math.round(ref.x)},${Math.round(ref.y)}`));
-      if (distinct.size < 2) continue;
-      const cx = cluster.reduce((sum, ref) => sum + ref.x, 0) / cluster.length;
-      const cy = cluster.reduce((sum, ref) => sum + ref.y, 0) / cluster.length;
-      for (const ref of cluster) targets.set(`${ref.wallId}:${ref.segmentIndex}:${ref.role}`, { x: cx, y: cy });
-      joined += cluster.length;
-    }
-    if (targets.size === 0) return 0;
-    this.history.beginBatch();
-    for (const wall of this.walls.placeables) {
-      const before = wall.segments.map((seg) => ({ ...seg }));
-      let changed = false;
-      const segments = wall.segments.map((seg, segmentIndex) => {
-        let next = seg;
-        for (const role of ['p1', 'p2'] as const) {
-          const target = targets.get(`${wall.id}:${segmentIndex}:${role}`);
-          if (target) {
-            next = withPointAt(next, role, target.x, target.y);
-            changed = true;
-          }
-        }
-        return next;
-      });
-      if (changed) this.walls.update(wall.id, { segments }, { before: { segments: before } });
-    }
-    this.history.endBatch();
-    return joined;
-  }
-
-  /** Cria walls ao redor das bordas da cena (Monk's Wall Enhancement: Wall Off Scene). */
-  encloseScene(): void {
-    if (!this.scene) return;
-    const points = rectPoints(0, 0, this.scene.width, this.scene.height, 1);
-    void this.walls.create({ segments: chainSegments(points) as WallDataInput['segments'] });
-  }
-
-  /** Converte drawings selecionados (rect/ellipse) em walls e remove os drawings. */
-  convertDrawingsToWalls(): number {
-    const drawings = this.selected.filter((obj) => obj.objectType === 'drawing');
-    if (drawings.length === 0) return 0;
-    this.history.beginBatch();
-    void (async () => {
-      try {
-        for (const obj of drawings) {
-          const doc = obj.document as { type?: string; x?: number; y?: number; width?: number; height?: number };
-          const x = doc.x ?? 0;
-          const y = doc.y ?? 0;
-          const width = doc.width ?? 0;
-          const height = doc.height ?? 0;
-          let segments: WallDataInput['segments'] = [];
-          if (doc.type === 'rect') {
-            segments = chainSegments(rectPoints(x, y, width, height, 1)) as WallDataInput['segments'];
-          } else if (doc.type === 'ellipse') {
-            const points = ellipsePoints(x + width / 2, y + height / 2, width / 2, height / 2, CONFIG.wall.curveSegments);
-            segments = chainSegments(points) as WallDataInput['segments'];
-          }
-          if (segments.length === 0) continue;
-          this._selection.delete(obj.id);
-          await this.walls.create({ segments });
-          this.drawings.delete(obj.id);
-        }
-        this.refreshSelection();
-      } finally {
-        this.history.endBatch();
-      }
-    })();
-    return drawings.length;
-  }
-
-  /** Aplica novas posições a um conjunto de pontos de wall, com snapshot para undo. */
-  commitWallPoints(before: Map<string, WallSegmentData[]>): void {
-    this.history.beginBatch();
-    for (const [wallId, segmentsBefore] of before) {
-      const wall = this.walls.get(wallId);
-      if (!wall) continue;
-      const after = wall.segments.map((seg) => ({ ...seg }));
-      if (JSON.stringify(after) === JSON.stringify(segmentsBefore)) continue;
-      this.walls.update(wallId, { segments: after }, { before: { segments: segmentsBefore } });
-    }
-    this.history.endBatch();
-    this.handles?.refresh();
-    this.fog.compose();
-    this.lighting.compose();
-  }
-
-  private movementSegments(): { a: Point; b: Point }[] {
-    const segments: { a: Point; b: Point }[] = [];
-    for (const wall of this.walls.placeables) {
-      for (const seg of wall.segments) {
-        if (seg.movement === false) continue;
-        if (seg.door && seg.doorOpen) continue;
-        if (seg.curve && seg.curve !== 'linear') {
-          const points = flattenSegment(seg, 12);
-          for (let i = 1; i < points.length; i++) segments.push({ a: points[i - 1], b: points[i] });
-        } else {
-          segments.push({ a: { x: seg.x1, y: seg.y1 }, b: { x: seg.x2, y: seg.y2 } });
-        }
-      }
-    }
-    return segments;
-  }
-
-  /** true se o caminho from→to cruza alguma wall que bloqueia movimento. */
+  /** true se o caminho from→to cruza algum bloqueio contribuído pelos plugins. */
   isMoveBlocked(from: Point, to: Point): boolean {
     if (from.x === to.x && from.y === to.y) return false;
-    for (const seg of this.movementSegments()) {
+    for (const seg of this.movementSegments(from, to)) {
       if (segmentsIntersect(from, to, seg.a, seg.b)) return true;
     }
     return false;
@@ -512,6 +312,8 @@ export class Canvas implements CanvasLike {
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
+    for (const plugin of this.options.plugins ?? []) await this.use(plugin);
+
     const width = this.container.clientWidth || 800;
     const height = this.container.clientHeight || 600;
     await this.app.init({
@@ -534,29 +336,13 @@ export class Canvas implements CanvasLike {
     this.viewport.pixi.addChild(this.stage);
     this.stage.sortableChildren = true;
 
-    for (const layer of [this.background, this.grid, this.tiles, this.drawings, this.walls, this.templates, this.tokens, this.lights, this.lighting, this.fog, this.preview, this.handles]) {
-      this.stage.addChild(layer);
-    }
-
-    this.layers.register('background', 'Background', this.background);
-    this.layers.register('tiles', 'Tiles', this.tiles);
-    this.layers.register('drawings', 'Drawings', this.drawings);
-    this.layers.register('walls', 'Walls', this.walls);
-    this.layers.register('templates', 'Templates', this.templates);
-    this.layers.register('tokens', 'Tokens', this.tokens);
-    this.layers.register('lights', 'Lights', this.lights);
-    this.layers.register('grid', 'Grid', this.grid);
-    this.layers.register('lighting', 'Lighting', this.lighting, { visible: false });
-    this.layers.register('fog', 'Fog of War', this.fog, { visible: false });
-    this.fog.attach();
-    this.lighting.attach();
-
     this._resizeObserver = new ResizeObserver(() => {
       this.viewport?.resize(this.container.clientWidth, this.container.clientHeight);
     });
     this._resizeObserver.observe(this.container);
 
-    this.tools = new ToolManager(this, this.options.tools);
+    this.tools = new ToolManager(this, this.pendingTools, this.options.tools);
+    this.pendingTools.length = 0;
     this.history = new HistoryManager(this);
     this.inputs = new InputsManager({
       element: this.app.canvas,
@@ -623,27 +409,17 @@ export class Canvas implements CanvasLike {
 
     this.viewport?.setWorld(scene.width, scene.height);
     this.viewport?.fit(scene.width, scene.height);
-    this.fog.setup(scene.width, scene.height);
-    this.lighting.setup(scene.width, scene.height);
+    this.bus.call('scene:setup', { width: scene.width, height: scene.height });
 
-    for (const tile of scene.tiles ?? []) await this.tiles.create(tile);
-    for (const drawing of scene.drawings ?? []) await this.drawings.create(drawing);
-    for (const wall of scene.walls ?? []) await this.walls.create(wall);
-    for (const token of scene.tokens ?? []) await this.tokens.create(token);
-    for (const light of scene.lights ?? []) await this.lights.create(light);
-    for (const template of scene.templates ?? []) await this.templates.create(template);
+    await this.documents.createFromScene(scene as Record<string, unknown>);
 
     await Promise.all([this.background.draw(), this.grid.draw()]);
   }
 
   private async tearDown(): Promise<void> {
+    this.bus.call('scene:teardown', {});
     await Promise.all([
-      this.tokens.tearDown(),
-      this.tiles.tearDown(),
-      this.drawings.tearDown(),
-      this.walls.tearDown(),
-      this.lights.tearDown(),
-      this.templates.tearDown(),
+      this.documents.tearDownAll(),
       this.background.tearDown(),
       this.grid.tearDown(),
     ]);
@@ -725,13 +501,14 @@ export class Canvas implements CanvasLike {
 
   destroy(): void {
     this._resizeObserver?.disconnect();
-    this.app.ticker.remove(this.tickInputs, this);
+    this.app.ticker?.remove(this.tickInputs, this);
     this.inputs?.destroy();
-    void this.fog?.tearDown();
-    void this.lighting?.tearDown();
+    this.plugins.disposeAllSync();
     this.animation.cancelAll();
     this.bus.emit('destroy', {});
-    this.app.destroy({ removeView: true }, { children: true, texture: true, textureSource: true });
+    if (this.initialized) {
+      this.app.destroy({ removeView: true }, { children: true, texture: true, textureSource: true });
+    }
     this.bus.destroy();
     if (Canvas.instance === this) Canvas.instance = null;
     this.initialized = false;

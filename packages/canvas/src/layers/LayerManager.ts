@@ -11,32 +11,35 @@ export interface CanvasLayerState {
 
 interface Entry extends CanvasLayerState {
   layer: CanvasLayer;
+  order: number;
+  seq: number;
 }
 
 export type LayerMoveDirection = 'up' | 'down' | 'top' | 'bottom';
 
+export interface LayerRegisterOptions extends Partial<Pick<CanvasLayerState, 'visible' | 'opacity' | 'locked'>> {
+  /** Ordem de empilhamento (menor = mais ao fundo). Default: sequencial. */
+  order?: number;
+}
+
 /**
  * Registro ordenado (fundo → topo) das camadas da cena. Controla visibilidade,
  * opacidade, trava (bloqueia interação/picking) e reordenação via zIndex.
- * Extensível: camadas customizadas podem ser registradas com `register`.
+ * Camadas são registradas pelo core e por plugins (LayerContribution).
  * Mudanças emitem `layers:change` no bus com a lista serializada.
  */
 export class LayerManager {
   private readonly canvas: Canvas;
-  private readonly entries: Entry[] = [];
+  private entries: Entry[] = [];
   private readonly byId = new Map<string, Entry>();
   private readonly byLayer = new Map<CanvasLayer, Entry>();
+  private seq = 0;
 
   constructor(canvas: Canvas) {
     this.canvas = canvas;
   }
 
-  register(
-    id: string,
-    label: string,
-    layer: CanvasLayer,
-    options?: Partial<Pick<CanvasLayerState, 'visible' | 'opacity' | 'locked'>>,
-  ): void {
+  register(id: string, label: string, layer: CanvasLayer, options?: LayerRegisterOptions): void {
     if (this.byId.has(id)) return;
     const entry: Entry = {
       id,
@@ -45,10 +48,22 @@ export class LayerManager {
       visible: options?.visible ?? true,
       opacity: options?.opacity ?? 1,
       locked: options?.locked ?? false,
+      order: options?.order ?? this.seq * 10,
+      seq: this.seq++,
     };
     this.entries.push(entry);
     this.byId.set(id, entry);
     this.byLayer.set(layer, entry);
+    this.apply();
+    this.emit();
+  }
+
+  unregister(id: string): void {
+    const entry = this.byId.get(id);
+    if (!entry) return;
+    this.byId.delete(id);
+    this.byLayer.delete(entry.layer);
+    this.entries = this.entries.filter((e) => e !== entry);
     this.apply();
     this.emit();
   }
@@ -62,6 +77,16 @@ export class LayerManager {
     const entry = this.byId.get(id);
     if (!entry) return undefined;
     return { id: entry.id, label: entry.label, visible: entry.visible, opacity: entry.opacity, locked: entry.locked };
+  }
+
+  getLayer<T extends CanvasLayer = CanvasLayer>(id: string): T | undefined {
+    return this.byId.get(id)?.layer as T | undefined;
+  }
+
+  /** Posição de empilhamento da layer (0 = fundo). -1 se não registrada. */
+  orderOf(layer: CanvasLayer): number {
+    const entry = this.byLayer.get(layer);
+    return entry ? this.entries.indexOf(entry) : -1;
   }
 
   setVisible(id: string, visible: boolean): void {
@@ -97,6 +122,9 @@ export class LayerManager {
     else if (direction === 'top') target = this.entries.length;
     else target = 0;
     this.entries.splice(target, 0, entry);
+    this.entries.forEach((e, i) => {
+      e.order = i * 10;
+    });
     this.apply();
     this.emit();
   }
@@ -108,6 +136,7 @@ export class LayerManager {
   }
 
   private apply(): void {
+    this.entries.sort((a, b) => a.order - b.order || a.seq - b.seq);
     this.entries.forEach((entry, index) => {
       entry.layer.zIndex = index * 10;
     });
