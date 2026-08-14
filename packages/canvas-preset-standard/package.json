@@ -1,0 +1,50 @@
+{
+  "name": "@openvtt/canvas-preset-standard",
+  "version": "0.1.0",
+  "description": "Standard preset for @openvtt/canvas — bundles the core plugins (tiles, drawings, walls, templates, tokens, lights, measure, lighting, fog) in one import.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@openvtt/canvas": "workspace:*",
+    "@openvtt/canvas-plugin-tiles": "workspace:*",
+    "@openvtt/canvas-plugin-drawings": "workspace:*",
+    "@openvtt/canvas-plugin-walls": "workspace:*",
+    "@openvtt/canvas-plugin-templates": "workspace:*",
+    "@openvtt/canvas-plugin-tokens": "workspace:*",
+    "@openvtt/canvas-plugin-lights": "workspace:*",
+    "@openvtt/canvas-plugin-measure": "workspace:*",
+    "@openvtt/canvas-plugin-lighting": "workspace:*",
+    "@openvtt/canvas-plugin-fog": "workspace:*"
+  },
+  "peerDependencies": {
+    "pixi.js": "^8.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "pixi.js": "^8.15.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["openvtt", "canvas", "preset", "plugins", "vtt", "tabletop"]
+}
