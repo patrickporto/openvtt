@@ -17,7 +17,7 @@ export const sheetContract = defineContract({
     'effect:disabled': instanceRef,
     computed: v.looseObject({
       patches: v.array(
-        v.looseObject({ path: v.string(), previous: v.unknown(), next: v.unknown() }),
+        v.object({ path: v.string(), previous: v.unknown(), next: v.unknown() }),
       ),
     }),
     'trigger:fired': v.looseObject({ instanceId: v.string(), on: v.string() }),
