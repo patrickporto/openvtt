@@ -35,6 +35,26 @@ export function distance(ax: number, ay: number, bx: number, by: number): number
   return Math.hypot(ax - bx, ay - by);
 }
 
+/**
+ * Passo de suavização exponencial em direção ao alvo (frame-rate
+ * independente): a cada tick aproxima `current` de `target` com constante de
+ * tempo derivada de `durationMs`. Usado pelo drag suavizado (TokenEase-style).
+ */
+export function easeTowards(
+  current: { x: number; y: number },
+  target: { x: number; y: number },
+  dtMs: number,
+  durationMs: number,
+): { x: number; y: number } {
+  if (dtMs <= 0) return { x: current.x, y: current.y };
+  const tau = Math.max(1, durationMs) / 3;
+  const k = 1 - Math.exp(-dtMs / tau);
+  return {
+    x: current.x + (target.x - current.x) * k,
+    y: current.y + (target.y - current.y) * k,
+  };
+}
+
 /** Interseção entre os segmentos (a1→a2) e (b1→b2), por orientação. */
 export function segmentsIntersect(
   a1: { x: number; y: number },

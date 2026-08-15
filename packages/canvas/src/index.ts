@@ -12,6 +12,8 @@ export type {
   CanvasPlugin,
   PluginContext,
   DocumentTypeDefinition,
+  DocumentBehavior,
+  EasedDragOptions,
   ToolContribution,
   LayerContribution,
   TransformAdapter,
@@ -58,7 +60,7 @@ export type { CanvasLayerState, LayerMoveDirection, LayerRegisterOptions } from 
 /* ------------------------------ placeables ---------------------------- */
 
 export { PlaceableObject } from './placeables/PlaceableObject';
-export type { PlaceableObjectOptions } from './placeables/PlaceableObject';
+export type { PlaceableObjectOptions, CanvasAnimationLike } from './placeables/PlaceableObject';
 
 /* ------------------------------- grid --------------------------------- */
 
@@ -148,6 +150,7 @@ export {
   clamp,
   lerp,
   distance,
+  easeTowards,
   rectanglesIntersect,
 } from './utils';
 export type { Rectangle } from './utils';

@@ -1,10 +1,18 @@
 import { Graphics, Sprite, Text } from 'pixi.js';
-import { PlaceableObject, CONFIG, dynamicBus, toHex, type CanvasLike } from '@openvtt/canvas';
+import { PlaceableObject, CONFIG, Easing, dynamicBus, lerp, toHex, type CanvasLike } from '@openvtt/canvas';
 import type { TokenData } from '../schemas';
+
+export interface TokenMoveOptions {
+  animated?: boolean;
+  duration?: number;
+  ease?: (t: number) => number;
+  onComplete?: () => void;
+}
 
 export class Token extends PlaceableObject<TokenData> {
   readonly objectType = 'token';
   private baseSize = 0;
+  private moveAnim: string | null = null;
 
   constructor(document: TokenData, canvas: CanvasLike) {
     super(document, canvas, { interactive: true });
@@ -63,8 +71,59 @@ export class Token extends PlaceableObject<TokenData> {
     this.refreshSelection();
   }
 
-  moveTo(x: number, y: number): void {
+  /**
+   * Movimento programático. Por padrão é animado (TokenEase-style): duração
+   * proporcional à distância, cancelável por novo movimento ou drag.
+   * `moveTo(x, y, { animated: false })` teleporta.
+   */
+  moveTo(x: number, y: number, options: TokenMoveOptions = {}): void {
+    const animated = options.animated !== false;
+    if (!animated || !this.canvas.animation) {
+      this.moveToImmediate(x, y);
+      options.onComplete?.();
+      return;
+    }
+    const from = { x: this.x, y: this.y };
+    this.moveAnim = this.canvas.animation.animate({
+      name: this.moveAnim ?? `token-move-${this.id}`,
+      duration: options.duration ?? this.moveDuration(x, y),
+      ease: options.ease ?? Easing.inOutQuad,
+      onUpdate: (_progress, eased) => {
+        this.position.set(lerp(from.x, x, eased), lerp(from.y, y, eased));
+        this.refresh();
+      },
+      onComplete: () => {
+        this.moveAnim = null;
+        this.position.set(x, y);
+        this.emitMoved(x, y);
+        options.onComplete?.();
+      },
+    });
+  }
+
+  moveToImmediate(x: number, y: number): void {
+    if (this.moveAnim) {
+      this.canvas.animation?.cancel(this.moveAnim);
+      this.moveAnim = null;
+    }
     this.position.set(x, y);
+    this.emitMoved(x, y);
+  }
+
+  /** Cancela movimento animado em andamento (ex.: início de drag). */
+  cancelMove(): void {
+    if (this.moveAnim) {
+      this.canvas.animation?.cancel(this.moveAnim);
+      this.moveAnim = null;
+    }
+  }
+
+  private moveDuration(x: number, y: number): number {
+    const dist = Math.hypot(x - this.x, y - this.y);
+    return Math.min(750, Math.max(150, dist));
+  }
+
+  private emitMoved(x: number, y: number): void {
     dynamicBus(this.canvas.bus).emit('token:moved', { id: this.id, x, y });
   }
 }

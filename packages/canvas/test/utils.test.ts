@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { clamp, lerp, rectanglesIntersect, toHex } from '../src/utils';
+import { clamp, easeTowards, lerp, rectanglesIntersect, toHex } from '../src/utils';
 
 describe('toHex', () => {
   it('passes numbers through', () => {
@@ -33,5 +33,28 @@ describe('rectanglesIntersect', () => {
   });
   it('detects non-overlap', () => {
     expect(rectanglesIntersect({ x: 0, y: 0, width: 10, height: 10 }, { x: 20, y: 20, width: 5, height: 5 })).toBe(false);
+  });
+});
+
+describe('easeTowards', () => {
+  it('approaches the target without overshooting', () => {
+    let pos = { x: 0, y: 0 };
+    const target = { x: 100, y: 0 };
+    for (let i = 0; i < 60; i++) pos = easeTowards(pos, target, 16, 150);
+    expect(pos.x).toBeGreaterThan(99);
+    expect(pos.x).toBeLessThanOrEqual(100);
+    expect(pos.y).toBe(0);
+  });
+
+  it('is frame-rate independent (same fraction per time window)', () => {
+    const oneFrame = easeTowards({ x: 0, y: 0 }, { x: 100, y: 0 }, 32, 150).x;
+    let x = 0;
+    for (let i = 0; i < 2; i++) x = easeTowards({ x, y: 0 }, { x: 100, y: 0 }, 16, 150).x;
+    expect(x).toBeCloseTo(oneFrame, 5);
+  });
+
+  it('does not move when dt is zero', () => {
+    const pos = easeTowards({ x: 10, y: 10 }, { x: 50, y: 50 }, 0, 150);
+    expect(pos).toEqual({ x: 10, y: 10 });
   });
 });

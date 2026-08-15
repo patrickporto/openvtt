@@ -1,8 +1,10 @@
 import { Tool } from './Tool';
+import type { Ticker } from 'pixi.js';
+import { easeTowards } from '../utils';
 import type { PlaceableObject } from '../placeables/PlaceableObject';
 import type { CanvasPointerInfo, Point } from '../input/types';
 import type { HandleCorner, HandleEntry, HandleInfo } from '../handles/HandlesLayer';
-import type { DocumentTypeDefinition } from '../plugins/types';
+import type { DocumentTypeDefinition, EasedDragOptions } from '../plugins/types';
 
 function cursorForHandle(entry: HandleEntry): string {
   if (entry.cursor) return entry.cursor;
@@ -20,6 +22,12 @@ function defOf(canvas: Tool['canvas'], obj: PlaceableObject): DocumentTypeDefini
 
 function isMovable(canvas: Tool['canvas'], obj: PlaceableObject): boolean {
   return defOf(canvas, obj)?.behavior?.movable !== false;
+}
+
+function easedDragOf(canvas: Tool['canvas'], obj: PlaceableObject): EasedDragOptions | null {
+  const flag = defOf(canvas, obj)?.behavior?.easedDrag;
+  if (flag === undefined || flag === false) return null;
+  return flag === true ? {} : flag;
 }
 
 /** Campos de documento que cada tipo transformável expõe para resize/rotação. */
@@ -121,6 +129,8 @@ class SelectDragging extends Tool {
   static id = 'dragging';
   private startWorld: Point = { x: 0, y: 0 };
   private startPositions = new Map<string, Point>();
+  private easeTargets = new Map<string, Point>();
+  private easeFn: ((ticker: Ticker) => void) | null = null;
   private primary: PlaceableObject | null = null;
   private measureFrom: Point | null = null;
   private moved = false;
@@ -135,6 +145,7 @@ class SelectDragging extends Tool {
     this.committed = false;
     this.startWorld = this.inputs.getCurrentWorldPoint();
     this.startPositions.clear();
+    this.easeTargets.clear();
     for (const obj of this.canvas.selected) {
       if (!isMovable(this.canvas, obj)) continue;
       this.startPositions.set(obj.id, { x: obj.x, y: obj.y });
@@ -158,6 +169,7 @@ class SelectDragging extends Tool {
       snapDelta = { x: snapped.x - primaryStart.x, y: snapped.y - primaryStart.y };
     }
 
+    let anyEased = false;
     for (const obj of this.canvas.selected) {
       const start = this.startPositions.get(obj.id);
       if (!start) continue;
@@ -166,10 +178,16 @@ class SelectDragging extends Tool {
       if (defOf(this.canvas, obj)?.behavior?.collides && this.canvas.isMoveBlocked({ x: obj.x, y: obj.y }, { x: nx, y: ny })) {
         continue;
       }
+      if (easedDragOf(this.canvas, obj)) {
+        this.easeTargets.set(obj.id, { x: nx, y: ny });
+        anyEased = true;
+        continue;
+      }
       obj.position.set(nx, ny);
       obj.refresh();
       this.canvas.reindex(obj);
     }
+    if (anyEased) this.startEaseTicker();
     if (this.measureFrom && this.primary) {
       const units = Math.hypot(this.primary.x - this.measureFrom.x, this.primary.y - this.measureFrom.y) / this.canvas.grid.size;
       this.preview.clear();
@@ -179,9 +197,47 @@ class SelectDragging extends Tool {
     this.canvas.bus.call('scene:refresh', {});
   }
 
+  private startEaseTicker(): void {
+    if (this.easeFn) return;
+    this.easeFn = (ticker: Ticker) => this.stepEase(ticker.deltaMS);
+    this.canvas.app.ticker.add(this.easeFn);
+  }
+
+  private stepEase(dtMs: number): void {
+    for (const obj of this.canvas.selected) {
+      const target = this.easeTargets.get(obj.id);
+      if (!target) continue;
+      const ease = easedDragOf(this.canvas, obj);
+      if (!ease) continue;
+      const next = easeTowards({ x: obj.x, y: obj.y }, target, dtMs, ease.duration ?? 150);
+      obj.position.set(next.x, next.y);
+      obj.refresh();
+      this.canvas.reindex(obj);
+    }
+    this.canvas.handles.refresh();
+  }
+
+  private stopEase(finalize: boolean): void {
+    if (this.easeFn) {
+      this.canvas.app.ticker.remove(this.easeFn);
+      this.easeFn = null;
+    }
+    if (finalize) {
+      for (const obj of this.canvas.selected) {
+        const target = this.easeTargets.get(obj.id);
+        if (!target) continue;
+        obj.position.set(target.x, target.y);
+        obj.refresh();
+        this.canvas.reindex(obj);
+      }
+    }
+    this.easeTargets.clear();
+  }
+
   override onPointerUp(): void {
     this.preview.clear();
     this.committed = true;
+    this.stopEase(true);
     if (this.moved) {
       this.canvas.history.beginBatch();
       for (const obj of this.canvas.selected) {
@@ -196,10 +252,12 @@ class SelectDragging extends Tool {
 
   override onExit(): void {
     this.preview.clear();
+    this.stopEase(false);
     if (this.moved && !this.committed) this.restorePositions();
   }
 
   protected override onEscape(): void {
+    this.stopEase(false);
     this.restorePositions();
     this.parent?.transition('idle');
   }

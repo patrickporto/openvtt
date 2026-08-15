@@ -56,17 +56,32 @@ export interface DocumentTypeDefinition<D = any, I = D> {
   events?: boolean;
   /** Adapter de resize/rotação para os handles da Select tool. */
   transform?: TransformAdapter<D>;
-  /** Comportamento na Select tool (drag, snap, colisão, régua). */
-  behavior?: {
-    /** Se false, o documento não é movido por drag/setas (ex.: walls). Default true. */
-    movable?: boolean;
-    /** Snap ao grid durante o drag e movimento por setas (ex.: tokens). */
-    snapToGrid?: boolean;
-    /** Testa `isMoveBlocked` ao mover (ex.: tokens contra walls). */
-    collides?: boolean;
-    /** Mostra régua de distância durante o drag (ex.: tokens). */
-    rulerOnDrag?: boolean;
-  };
+  /** Comportamento na Select tool (drag, snap, colisão, régua, easing). */
+  behavior?: DocumentBehavior;
+}
+
+/** Opções do movimento suavizado durante o drag (TokenEase-style). */
+export interface EasedDragOptions {
+  /** Duração característica do easing em ms (default 150). */
+  duration?: number;
+}
+
+/** Comportamento na Select tool (drag, snap, colisão, régua). */
+export interface DocumentBehavior {
+  /** Se false, o documento não é movido por drag/setas (ex.: walls). Default true. */
+  movable?: boolean;
+  /** Snap ao grid durante o drag e movimento por setas (ex.: tokens). */
+  snapToGrid?: boolean;
+  /** Testa `isMoveBlocked` ao mover (ex.: tokens contra walls). */
+  collides?: boolean;
+  /** Mostra régua de distância durante o drag (ex.: tokens). */
+  rulerOnDrag?: boolean;
+  /**
+   * Movimento suavizado durante o drag: o objeto persegue o ponteiro com
+   * easing exponencial em vez de teleportar (estilo TokenEase). No release
+   * assenta exatamente no alvo (posição snapada).
+   */
+  easedDrag?: boolean | EasedDragOptions;
 }
 
 /** Contribuição de tool de um plugin. */

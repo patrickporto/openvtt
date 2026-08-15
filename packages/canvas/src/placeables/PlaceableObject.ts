@@ -5,10 +5,23 @@ import type { CanvasBus } from '../bus';
 import type { GridConfig } from '../config';
 import { toHex } from '../utils';
 
+/** Subset de CanvasAnimation usado por placeables (moveTo animado). */
+export interface CanvasAnimationLike {
+  animate(options: {
+    name?: string;
+    duration: number;
+    ease?: (t: number) => number;
+    onUpdate: (progress: number, eased: number) => void;
+    onComplete?: () => void;
+  }): string;
+  cancel(name: string): void;
+}
+
 export interface CanvasLike {
   readonly bus: CanvasBus;
   readonly grid: GridConfig;
   readonly selection: Set<string>;
+  readonly animation?: CanvasAnimationLike;
 }
 
 export interface PlaceableObjectOptions {
