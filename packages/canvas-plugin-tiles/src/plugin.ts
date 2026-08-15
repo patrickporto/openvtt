@@ -1,6 +1,7 @@
 import { definePlugin, type PluginContext } from '@openvtt/canvas';
 import { Tile } from './placeables/Tile';
 import { TileTool } from './tools/TileTool';
+import { registerTilesContextMenu } from './context';
 import { TileDataSchema, type TileData } from './schemas';
 
 export interface TileToolOptions {
@@ -34,5 +35,7 @@ export const tilesPlugin = definePlugin({
     });
 
     ctx.registerTool({ tool: TileTool, hotkey: 'i', defaults: { ...DEFAULTS } });
+
+    registerTilesContextMenu(ctx);
   },
 });

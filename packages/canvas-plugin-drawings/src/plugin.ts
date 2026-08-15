@@ -2,6 +2,7 @@ import { definePlugin, type PluginContext } from '@openvtt/canvas';
 import { Drawing } from './placeables/Drawing';
 import { DrawTool } from './tools/DrawTool';
 import { ShapeTool } from './tools/ShapeTool';
+import { registerDrawingsContextMenu } from './context';
 import { DrawingDataSchema, type DrawingData } from './schemas';
 
 export interface DrawToolOptions {
@@ -45,5 +46,7 @@ export const drawingsPlugin = definePlugin({
 
     ctx.registerTool({ tool: DrawTool, hotkey: 'd', defaults: { ...DRAW_DEFAULTS } });
     ctx.registerTool({ tool: ShapeTool, hotkey: 's', defaults: { ...SHAPE_DEFAULTS } });
+
+    registerDrawingsContextMenu(ctx);
   },
 });

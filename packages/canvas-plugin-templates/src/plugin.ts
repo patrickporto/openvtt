@@ -1,6 +1,7 @@
 import { definePlugin, type PluginContext } from '@openvtt/canvas';
 import { AoETemplate } from './placeables/AoETemplate';
 import { TemplateTool } from './tools/TemplateTool';
+import { registerTemplatesContextMenu } from './context';
 import { TemplateDataSchema, type TemplateData, type TemplateShape } from './schemas';
 
 export interface TemplateToolOptions {
@@ -27,5 +28,7 @@ export const templatesPlugin = definePlugin({
     });
 
     ctx.registerTool({ tool: TemplateTool, hotkey: 'b', defaults: { ...DEFAULTS } });
+
+    registerTemplatesContextMenu(ctx);
   },
 });

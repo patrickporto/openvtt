@@ -1,6 +1,7 @@
 import { definePlugin, type PluginContext } from '@openvtt/canvas';
 import { AmbientLight } from './placeables/AmbientLight';
 import { LightTool } from './tools/LightTool';
+import { registerLightsContextMenu } from './context';
 import { LightDataSchema, type LightData } from './schemas';
 
 export interface LightToolOptions {
@@ -41,5 +42,7 @@ export const lightsPlugin = definePlugin({
       }
       return payload;
     });
+
+    registerLightsContextMenu(ctx);
   },
 });

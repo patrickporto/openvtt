@@ -1,4 +1,12 @@
-import type { CanvasPlugin, PluginContext, PlaceablesLayer } from '@openvtt/canvas';
+import {
+  MENU_ORDER,
+  menu,
+  menuWhen,
+  type CanvasPlugin,
+  type ContextMenuItem,
+  type PluginContext,
+  type PlaceablesLayer,
+} from '@openvtt/canvas';
 import { Wall } from './placeables/Wall';
 import { WallTool } from './tools/WallTool';
 import { WallDataSchema, type WallData, type WallDataInput, type WallSegmentData } from './schemas';
@@ -22,6 +30,14 @@ export interface WallToolOptions {
 }
 
 const DEFAULTS: WallToolOptions = { door: false, mode: 'poly', tolerance: 8, segments: 16, sideSegments: 1 };
+
+const ICONS = {
+  door: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4.5A1.5 1.5 0 0 1 6.5 3h4A1.5 1.5 0 0 1 12 4.5V21"/><path d="M3 21h18"/><path d="M12 13a5.5 5.5 0 0 1 5.5 5.5"/><circle cx="8.5" cy="12" r=".9" fill="currentColor" stroke="none"/></svg>',
+  secret: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 3 18 18"/><path d="M10.6 5.2A10.4 10.4 0 0 1 12 5c7 0 10 7 10 7a16 16 0 0 1-3.1 4.1M6.4 6.7A15.9 15.9 0 0 0 2 12s3 7 10 7a9.9 9.9 0 0 0 4.3-1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
+  split: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.2 7.7 20 19M8.2 16.3 20 5"/></svg>',
+  join: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="18.5" r="2.4"/><circle cx="18.5" cy="5.5" r="2.4"/><path d="m7.2 16.8 9.6-9.6"/></svg>',
+  enclose: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M9 4v2.5M15 4v2.5M9 17.5V20M15 17.5V20M4 9h2.5M4 15h2.5M17.5 9H20M17.5 15H20" opacity=".6"/></svg>',
+};
 
 function sameSegments(a: WallSegmentData[], b: WallSegmentData[]): boolean {
   if (a.length !== b.length) return false;
@@ -104,6 +120,13 @@ export class WallsPlugin implements CanvasPlugin {
       return;
     });
 
+    ctx.bus.tap('contextmenu:before', 'walls', (payload) => {
+      if (ctx.canvas.getCurrentToolId() === 'wall') return { ...payload, handled: true };
+      return;
+    });
+
+    this.registerContextMenuItems(ctx);
+
     ctx.bus.tap('select:hovercursor', 'walls', (payload) => {
       if (payload.cursor) return;
       if (this.findDoor({ x: payload.x, y: payload.y }, this.doorTolerance())) {
@@ -168,6 +191,71 @@ export class WallsPlugin implements CanvasPlugin {
     });
   }
 
+  private registerContextMenuItems(ctx: PluginContext): void {
+    ctx.registerContextMenu({
+      id: 'walls:context',
+      when: menuWhen.selection('wall'),
+      items: (menuCtx) => {
+        const items: ContextMenuItem[] = [];
+        const door = this.findDoor({ x: menuCtx.x, y: menuCtx.y }, this.doorTolerance() * 2);
+        if (door) {
+          const isOpen = door.wall.segments[door.segmentIndex]?.doorOpen ?? false;
+          items.push(
+            menu.action('walls:door-toggle', isOpen ? 'Close door' : 'Open door', {
+              icon: ICONS.door,
+              order: MENU_ORDER.state,
+              onClick: () => this.toggleDoor(door.wall, door.segmentIndex),
+            }),
+            menu.action('walls:door-secret', 'Toggle secret door', {
+              icon: ICONS.secret,
+              order: MENU_ORDER.state,
+              onClick: () => this.toggleSecret(door.wall, door.segmentIndex),
+            }),
+          );
+        }
+        const hit = this.segmentAt({ x: menuCtx.x, y: menuCtx.y }, 6);
+        if (hit) {
+          items.push(
+            menu.action('walls:split', 'Split wall here', {
+              icon: ICONS.split,
+              order: MENU_ORDER.edit,
+              onClick: () => void this.splitWall(hit.wall, hit.segmentIndex, { x: menuCtx.x, y: menuCtx.y }),
+            }),
+          );
+        }
+        return items;
+      },
+    });
+
+    ctx.registerContextMenu({
+      id: 'walls:scene',
+      when: menuWhen.canvas(),
+      items: () => {
+        const hasOpenDoors = this.layer.placeables.some((wall) =>
+          wall.segments.some((seg) => (seg.door ?? false) && (seg.doorOpen ?? false)),
+        );
+        return [
+          menu.action('walls:close-doors', 'Close all doors', {
+            icon: ICONS.door,
+            order: MENU_ORDER.canvas,
+            disabled: !hasOpenDoors,
+            onClick: () => this.closeAllDoors(),
+          }),
+          menu.action('walls:join', 'Join endpoints', {
+            icon: ICONS.join,
+            order: MENU_ORDER.canvas,
+            onClick: () => this.joinWallEndpoints(8),
+          }),
+          menu.action('walls:enclose', 'Enclose scene', {
+            icon: ICONS.enclose,
+            order: MENU_ORDER.canvas,
+            onClick: () => this.encloseScene(),
+          }),
+        ];
+      },
+    });
+  }
+
   findDoor(point: { x: number; y: number }, tolerance: number): { wall: Wall; segmentIndex: number } | null {
     if (!this.ctx.canvas.layers.isInteractive(this.layer)) return null;
     let best: { wall: Wall; segmentIndex: number; distance: number } | null = null;
@@ -182,6 +270,10 @@ export class WallsPlugin implements CanvasPlugin {
       }
     }
     return best === null ? null : { wall: best.wall, segmentIndex: best.segmentIndex };
+  }
+
+  segmentAt(point: { x: number; y: number }, tolerance: number): { wall: Wall; segmentIndex: number } | null {
+    return this.findSegmentAt(point, tolerance);
   }
 
   toggleDoor(wall: Wall, segmentIndex: number): void {
