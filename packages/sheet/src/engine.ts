@@ -100,7 +100,7 @@ export class SheetEngine {
       turns: options.durationEvents?.turns ?? 'turn:end',
     };
     this.clockEvent = options.clockEvent === undefined ? 'clock:tick' : options.clockEvent;
-    this.documentData = document;
+    this.documentData = structuredClone(document);
 
     for (const def of this.pack.definitions ?? []) {
       this.definitions.set(def.id, def);
@@ -314,6 +314,12 @@ export class SheetEngine {
     this.markDirty();
     this.emitComputed();
     return this.snapshot();
+  }
+
+  updateBase(mutator: (base: Record<string, unknown>) => Record<string, unknown>): void {
+    const base = mutator(structuredClone(this.documentData.base));
+    this.documentData = { ...this.documentData, base };
+    this.afterMutation();
   }
 
   refresh(): void {

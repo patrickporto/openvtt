@@ -260,7 +260,7 @@ interface SheetEngineOptions {
 ```ts
 class SheetEngine {
   readonly pack: SystemPack;
-  constructor(document: CharacterDocument, options: SheetEngineOptions);
+  constructor(document: CharacterDocument, options: SheetEngineOptions); // clones the document; the engine owns its state
   get document(): CharacterDocument; // snapshot copy; mutations do not affect the engine
   snapshot(): CharacterDocument;
   attach(): () => void; // subscribe the engine to all bus events; returns a detach function
@@ -284,6 +284,8 @@ class SheetEngine {
 
   notifyEvent(name: string, payload?: unknown): void;
   tickSeconds(seconds: number): void;
+  loadDocument(json: unknown): CharacterDocument;
+  updateBase(mutator: (base: Record<string, unknown>) => Record<string, unknown>): void;
   refresh(): void;
 }
 
@@ -299,6 +301,8 @@ interface ApplyEffectOptions {
 - `compute()` is memoized and only recomputes when the document is dirty.
 - `buildRoll(templateId)` returns the template expression with all active roll transforms applied; throws `UnknownTemplateError` for unknown ids.
 - `notifyEvent` advances `until-event` durations, fires triggers, and emits expiry events. `tickSeconds` does the same for `seconds` durations.
+- The engine clones the document passed to the constructor and owns the copy; mutating the original afterwards has no effect.
+- `updateBase(mutator)` is the explicit way to change base values: the mutator receives a working clone of the current base and returns the next base; the engine adopts the result, recomputes, and emits `computed` patches. `loadDocument(json)` replaces the whole document (validated against `characterDocumentSchema`).
 - `refresh()` forces recomputation.
 
 ### Events

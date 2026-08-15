@@ -105,22 +105,21 @@ describe('Apocalypse World (PbtA)', () => {
   });
 
   it('harm >= 4 flags the character as unstable and derives the harm clock', () => {
-    const { engine, document } = makeEngine(apocalypseWorld, structuredClone(base));
+    const { engine } = makeEngine(apocalypseWorld, structuredClone(base));
     engine.applyEffect('state.unstable', { id: 'a-001' });
     expect(engine.compute().flags.unstable).toBeUndefined();
-    document.base.harm = 5;
-    engine.refresh();
+    engine.updateBase((b) => ({ ...b, harm: 5 }));
     const computed = engine.compute();
     expect(computed.flags.unstable).toBe(true);
     expect((computed.values as Record<string, any>).harm_clock).toBe(2);
   });
 
   it('misses on highlighted stats mark xp via trigger', () => {
-    const { engine, document } = makeEngine(apocalypseWorld, structuredClone(base));
+    const { engine } = makeEngine(apocalypseWorld, structuredClone(base));
     engine.applyEffect('highlight.stat', { id: 'a-001' });
     engine.notifyEvent('move:miss', { move: 'move.act-under-fire' });
     engine.notifyEvent('move:miss', { move: 'move.go-aggro' });
-    expect(document.base.xp).toBe(2);
+    expect(engine.document.base.xp).toBe(2);
   });
 
   it('hold is instance data written by the move effect', () => {

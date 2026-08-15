@@ -121,14 +121,13 @@ describe('Savage Worlds', () => {
   });
 
   it('incapacitates at 3 wounds and wounds penalize trait rolls via IR bonus', () => {
-    const { engine, document } = makeEngine(savageWorlds, structuredClone(base));
+    const { engine } = makeEngine(savageWorlds, structuredClone(base));
     engine.applyEffect('state.incapacitated', { id: 'a-001' });
     engine.applyEffect('state.wound-penalty', { id: 'a-002' });
     expect(engine.compute().flags.incapacitated).toBeUndefined();
     expect(engine.compute().rollTransforms).toHaveLength(0);
 
-    document.base.wounds = 3;
-    engine.refresh();
+    engine.updateBase((b) => ({ ...b, wounds: 3 }));
     const computed = engine.compute();
     expect(computed.flags.incapacitated).toBe(true);
     expect(computed.rollTransforms).toHaveLength(1);

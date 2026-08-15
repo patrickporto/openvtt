@@ -223,16 +223,16 @@ describe('trigger rollInto', () => {
         },
       ],
     };
-    const { engine, document } = makeEngine(
+    const { engine } = makeEngine(
       pack,
       { hp: { current: 20 } },
       { roller: () => 4 },
     );
     engine.applyEffect('conditions.poisoned', { id: 'a-001' });
     engine.notifyEvent('turn:start');
-    expect((document.base.hp as Record<string, unknown>).current).toBe(16);
+    expect((engine.document.base.hp as Record<string, unknown>).current).toBe(16);
     engine.notifyEvent('turn:start');
-    expect((document.base.hp as Record<string, unknown>).current).toBe(12);
+    expect((engine.document.base.hp as Record<string, unknown>).current).toBe(12);
   });
 });
 

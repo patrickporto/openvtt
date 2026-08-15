@@ -75,6 +75,14 @@ const doc = createDocument(pack, {
 
 A `CharacterDocument` is plain JSON: `{ systemId, systemVersion, identity, base, effects }`. It round-trips through `JSON.stringify` and through the exported `characterDocumentSchema` (Valibot).
 
+The engine **clones** the document on construction and owns the copy — mutating the original object afterwards never reaches the engine. Read state through `engine.document` (a fresh snapshot) and change base values explicitly:
+
+```ts
+engine.updateBase((base) => ({ ...base, xp: base.xp + 1 }));
+```
+
+The mutator receives a working clone of the current base and returns the next base; the engine adopts the result, recomputes, and emits `computed` patches on the bus. To replace the whole document (e.g. on hydration), use `engine.loadDocument(json)`.
+
 ## The engine
 
 ```ts

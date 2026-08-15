@@ -101,26 +101,30 @@ describe('Call of Cthulhu 7e', () => {
   });
 
   it('major wound flips on when damage crosses the half-hp threshold', () => {
-    const { engine, document } = makeEngine(coc, structuredClone(base));
+    const { engine } = makeEngine(coc, structuredClone(base));
     engine.applyEffect('conditions.major-wound', { id: 'a-001' });
     engine.applyEffect('conditions.dying', { id: 'a-002' });
     expect(engine.compute().flags.major_wound).toBeUndefined();
 
-    (document.base.hp as Record<string, unknown>).current = 4;
-    engine.refresh();
+    engine.updateBase((b) => {
+      (b.hp as Record<string, unknown>).current = 4;
+      return b;
+    });
     expect(engine.compute().flags.major_wound).toBe(true);
     expect(engine.compute().flags.dying).toBeUndefined();
 
-    (document.base.hp as Record<string, unknown>).current = 0;
-    engine.refresh();
+    engine.updateBase((b) => {
+      (b.hp as Record<string, unknown>).current = 0;
+      return b;
+    });
     expect(engine.compute().flags.dying).toBe(true);
   });
 
   it('spells cost sanity via instance-parametrized triggers', () => {
-    const { engine, document } = makeEngine(coc, structuredClone(base));
+    const { engine } = makeEngine(coc, structuredClone(base));
     engine.applyEffect('mythos.elder-sign', { id: 'a-001', data: { cost: 3 } });
     engine.notifyEvent('spell:cast');
-    expect(document.base.san).toBe(52);
+    expect(engine.document.base.san).toBe(52);
   });
 
   it('stacking rules let a penalty die override a bonus die', () => {

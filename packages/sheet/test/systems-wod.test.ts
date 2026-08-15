@@ -88,29 +88,34 @@ describe('Mundo das Trevas (V20)', () => {
   });
 
   it('wound penalties shrink the pool progressively', () => {
-    const { engine, document } = makeEngine(mundoDasTrevas, structuredClone(base));
+    const { engine } = makeEngine(mundoDasTrevas, structuredClone(base));
     engine.applyEffect('wound.injured', { id: 'a-001' });
     engine.applyEffect('wound.mauled', { id: 'a-002' });
 
-    (document.base.health as Record<string, unknown>).damage = 2;
-    engine.refresh();
+    engine.updateBase((b) => {
+      (b.health as Record<string, unknown>).damage = 2;
+      return b;
+    });
     expect((engine.compute().values as Record<string, any>).pools.melee).toBe(4);
 
-    (document.base.health as Record<string, unknown>).damage = 5;
-    engine.refresh();
+    engine.updateBase((b) => {
+      (b.health as Record<string, unknown>).damage = 5;
+      return b;
+    });
     expect((engine.compute().values as Record<string, any>).pools.melee).toBe(3);
 
-    (document.base.health as Record<string, unknown>).damage = 0;
-    engine.refresh();
+    engine.updateBase((b) => {
+      (b.health as Record<string, unknown>).damage = 0;
+      return b;
+    });
     expect((engine.compute().values as Record<string, any>).pools.melee).toBe(5);
   });
 
   it('low humanity flags frenzy propensity', () => {
-    const { engine, document } = makeEngine(mundoDasTrevas, structuredClone(base));
+    const { engine } = makeEngine(mundoDasTrevas, structuredClone(base));
     engine.applyEffect('state.frenzy-prone', { id: 'a-001' });
     expect(engine.compute().flags.frenzy_prone).toBeUndefined();
-    document.base.humanity = 3;
-    engine.refresh();
+    engine.updateBase((b) => ({ ...b, humanity: 3 }));
     expect(engine.compute().flags.frenzy_prone).toBe(true);
   });
 

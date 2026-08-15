@@ -88,18 +88,17 @@ describe('FATE Core', () => {
   });
 
   it('stunts gate on free invokes through a plain condition', () => {
-    const { engine, document } = makeEngine(fate, structuredClone(base));
+    const { engine } = makeEngine(fate, structuredClone(base));
     engine.applyEffect('stunt.footswork', { id: 'a-001' });
     expect((engine.compute().values as Record<string, any>).approaches.clever_total).toBe(2);
-    document.base.free_invokes = 1;
-    engine.refresh();
+    engine.updateBase((b) => ({ ...b, free_invokes: 1 }));
     expect((engine.compute().values as Record<string, any>).approaches.clever_total).toBe(4);
   });
 
   it('compels pay out fate points through a declarative trigger', () => {
-    const { engine, document } = makeEngine(fate, structuredClone(base));
+    const { engine } = makeEngine(fate, structuredClone(base));
     engine.applyEffect('meta.compel', { id: 'a-001' });
     engine.notifyEvent('compel', { aspect: 'aspects.guardian' });
-    expect(document.base.fate_points).toBe(4);
+    expect(engine.document.base.fate_points).toBe(4);
   });
 });

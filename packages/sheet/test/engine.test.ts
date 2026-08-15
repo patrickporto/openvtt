@@ -390,12 +390,12 @@ describe('durations & expiration', () => {
 
 describe('triggers', () => {
   it('applies recurring declarative changes (poison damage)', () => {
-    const { engine, document } = makeEngine(pack, structuredClone(base));
+    const { engine } = makeEngine(pack, structuredClone(base));
     engine.applyEffect('conditions.poisoned', { id: 'a-001' });
     engine.notifyEvent('turn:start');
-    expect((document.base.hp as Record<string, unknown>).current).toBe(16);
+    expect((engine.document.base.hp as Record<string, unknown>).current).toBe(16);
     engine.notifyEvent('turn:start');
-    expect((document.base.hp as Record<string, unknown>).current).toBe(14);
+    expect((engine.document.base.hp as Record<string, unknown>).current).toBe(14);
   });
 
   it('spawns another effect instance from a trigger', () => {
@@ -570,6 +570,25 @@ describe('document & interop', () => {
     leaked.base.score = 999;
     expect(engine.document.effects).toHaveLength(1);
     expect(engine.compute().values.score).toBe(12);
+  });
+
+  it('clones the constructor document: mutating the original never reaches the engine', () => {
+    const document = createDocument(pack, { base: structuredClone(base) });
+    const engine = new SheetEngine(document, { pack, id: makeIds() });
+    document.base.score = 999;
+    document.effects.push({
+      id: 'a-999',
+      ref: 'buff.small',
+      source: { kind: 'manual' },
+      enabled: true,
+    });
+    expect(engine.document.base.score).toBe(10);
+    expect(engine.document.effects).toHaveLength(0);
+    expect(engine.compute().values.score).toBe(10);
+
+    engine.updateBase((b) => ({ ...b, score: 20 }));
+    expect(engine.compute().values.score).toBe(20);
+    expect(document.base.score).toBe(999);
   });
 
   it('validates uuid v7 instance ids through the schema', () => {

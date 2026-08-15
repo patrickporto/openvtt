@@ -177,14 +177,18 @@ describe('D&D 5e', () => {
   });
 
   it('bloodied turns on below half hp and off again after healing', () => {
-    const { engine, document } = makeEngine(dnd5e, structuredClone(vexBase));
+    const { engine } = makeEngine(dnd5e, structuredClone(vexBase));
     engine.applyEffect('conditions.bloodied', { id: 'a-001' });
     expect(engine.compute().flags.bloodied).toBeUndefined();
-    (document.base.hp as Record<string, unknown>).current = 5;
-    engine.refresh();
+    engine.updateBase((b) => {
+      (b.hp as Record<string, unknown>).current = 5;
+      return b;
+    });
     expect(engine.compute().flags.bloodied).toBe(true);
-    (document.base.hp as Record<string, unknown>).current = 12;
-    engine.refresh();
+    engine.updateBase((b) => {
+      (b.hp as Record<string, unknown>).current = 12;
+      return b;
+    });
     expect(engine.compute().flags.bloodied).toBeUndefined();
   });
 
