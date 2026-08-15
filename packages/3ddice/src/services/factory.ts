@@ -208,11 +208,12 @@ export class DiceFactory {
   }
 
   #geometryFor(type: string, diceobj: DiceObject): DiceGeometryType | null {
-    const cached = this.#geometries.get(type) as DiceGeometryType | undefined;
+    const shape = (diceobj.shape as DiceShape) || (type as DiceShape);
+    const cached = this.#geometries.get(shape) as DiceGeometryType | undefined;
     if (cached) return cached;
-    const created = this.createGeometry(type as DiceShape, diceobj.scale * this.baseScale);
+    const created = this.createGeometry(shape, diceobj.scale * this.baseScale);
     if (created instanceof THREE.BufferGeometry) {
-      this.#geometries.set(type, created);
+      this.#geometries.set(shape, created);
       return created;
     }
     return null;
