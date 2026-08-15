@@ -66,8 +66,6 @@ export interface DiceBoxOptions {
   /** @deprecated use `colorSpotlight` */
   color_spotlight?: number;
   sound_dieMaterial?: string;
-  scale?: number;
-  onRollComplete?: () => void;
   assets?: DiceAssetsOptions;
   deps?: DiceBoxDeps;
 }
@@ -108,15 +106,60 @@ const AntialiasSchema = v.picklist(['none', 'msaa', 'smaa']);
 const ShadowQualitySchema = v.picklist(['none', 'low', 'medium', 'high']);
 const QueueModeSchema = v.picklist(['serial', 'replace', 'parallel']);
 
+const EnvironmentSchema = v.union([
+  v.picklist(['neutral', 'tavern', 'neon', 'none']),
+  v.looseObject({ source: v.string() }),
+  v.looseObject({ cubeMap: v.array(v.string()) }),
+]);
+
+const PostFXOptionsSchema = v.looseObject({
+  enabled: v.optional(v.boolean()),
+  bloom: v.optional(
+    v.union([
+      v.literal(false),
+      v.looseObject({
+        strength: v.optional(v.number()),
+        radius: v.optional(v.number()),
+        threshold: v.optional(v.number()),
+      }),
+    ])
+  ),
+  outline: v.optional(
+    v.union([
+      v.literal(false),
+      v.looseObject({
+        edgeStrength: v.optional(v.number()),
+        pulsePeriod: v.optional(v.number()),
+        visibleEdgeColor: v.optional(v.string()),
+        hiddenEdgeColor: v.optional(v.string()),
+      }),
+    ])
+  ),
+  antialias: v.optional(AntialiasSchema),
+});
+
+const CustomColorsetSchema = v.union([v.null(), v.looseObject({})]);
+
+const AssetsOptionsSchema = v.looseObject({
+  manager: v.optional(v.any()),
+  preload: v.optional(v.boolean()),
+  includeLazy: v.optional(v.boolean()),
+});
+
 export const DiceBoxOptionsSchema = v.looseObject({
   assetPath: v.optional(v.string()),
   worker: v.optional(v.boolean()),
+  workerFactory: v.optional(v.function()),
+  workerUrl: v.optional(v.union([v.string(), v.instance(URL)])),
   antialias: v.optional(AntialiasSchema),
   shadows: v.optional(v.union([ShadowQualitySchema, v.boolean()])),
+  environment: v.optional(EnvironmentSchema),
   environmentIntensity: v.optional(v.number()),
+  postprocessing: v.optional(PostFXOptionsSchema),
   normalMaps: v.optional(v.boolean()),
   theme: v.optional(v.string()),
   surface: v.optional(v.string()),
+  customColorset: v.optional(CustomColorsetSchema),
   texture: v.optional(v.string()),
   material: v.optional(v.string()),
   sounds: v.optional(v.boolean()),
@@ -131,6 +174,17 @@ export const DiceBoxOptionsSchema = v.looseObject({
   queueMode: v.optional(QueueModeSchema),
   dracoPath: v.optional(v.string()),
   colorSpotlight: v.optional(v.number()),
+  sound_dieMaterial: v.optional(v.string()),
+  assets: v.optional(AssetsOptionsSchema),
+  framerate: v.optional(v.number()),
+  theme_colorset: v.optional(v.string()),
+  theme_customColorset: v.optional(CustomColorsetSchema),
+  theme_surface: v.optional(v.string()),
+  theme_texture: v.optional(v.string()),
+  theme_material: v.optional(v.string()),
+  gravity_multiplier: v.optional(v.number()),
+  light_intensity: v.optional(v.number()),
+  color_spotlight: v.optional(v.number()),
 });
 
 export function validateOptions(options: unknown): DiceBoxOptions {
