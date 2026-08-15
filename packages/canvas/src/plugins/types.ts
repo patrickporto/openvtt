@@ -58,6 +58,12 @@ export interface DocumentTypeDefinition<D = any, I = D> {
   transform?: TransformAdapter<D>;
   /** Comportamento na Select tool (drag, snap, colisão, régua, easing). */
   behavior?: DocumentBehavior;
+  /**
+   * Campo do documento que carrega a arte (imagem) do placeable
+   * (ex.: 'texture'). Plugins de edição de imagem descobrem genericamente
+   * os tipos editáveis por este metadado — sem acoplamento entre plugins.
+   */
+  imageField?: string;
 }
 
 /** Opções do movimento suavizado durante o drag (TokenEase-style). */

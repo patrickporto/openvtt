@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import type { Canvas } from '@openvtt/canvas';
 import type { WallsPlugin, Wall } from '@openvtt/canvas-plugin-walls';
 import type { Token } from '@openvtt/canvas-plugin-tokens';
+import type { TokensPlugin, ImageEditorPlugin } from '@openvtt/canvas-preset-standard';
 
 let canvas: Canvas;
 const created: string[] = [];
@@ -28,8 +29,8 @@ afterAll(() => {
 });
 
 describe('plugin composition', () => {
-  it('installs all 9 preset plugins', () => {
-    expect(canvas.plugins.list().length).toBe(9);
+  it('installs all 10 preset plugins', () => {
+    expect(canvas.plugins.list().length).toBe(10);
   });
 
   it('registers every document type', () => {
@@ -129,5 +130,122 @@ describe('scene loading', () => {
     canvas.select(token as never, false);
     unsub();
     expect(seen.length).toBeGreaterThan(0);
+  });
+});
+
+describe('token ease (TokenEase-style)', () => {
+  it('tokens drag behavior declares easedDrag and duration is configurable', () => {
+    const tokens = canvas.plugins.get<TokensPlugin>('tokens')!;
+    expect(tokens).toBeDefined();
+    const behavior = canvas.documents.definition('token')?.behavior;
+    expect(behavior?.easedDrag).toEqual({ duration: 150 });
+    tokens.configureEase({ duration: 250 });
+    expect(tokens.easeDuration).toBe(250);
+    expect(canvas.documents.definition('token')?.behavior?.easedDrag).toEqual({ duration: 250 });
+    tokens.configureEase({ duration: 150 });
+  });
+
+  it('moveToken commits the document after the animated move', async () => {
+    const tokens = canvas.plugins.get<TokensPlugin>('tokens')!;
+    const token = canvas.documents.layer('token')!.placeables[0] as Token;
+    const target = { x: token.x + 100, y: token.y };
+    tokens.moveToken(token.id, target.x, target.y, { animated: false });
+    expect(token.x).toBe(target.x);
+    const updated = canvas.documents.get('token', token.id) as Token;
+    expect(updated.document.x).toBe(target.x);
+  });
+});
+
+describe('image editor', () => {
+  it('exposes a headless editor bound to the canvas', () => {
+    const imageEditor = canvas.plugins.get<ImageEditorPlugin>('imageEditor')!;
+    expect(imageEditor).toBeDefined();
+    const editor = imageEditor.createEditor();
+    expect(editor.state.hasSource).toBe(false);
+    expect(typeof editor.setTransform).toBe('function');
+  });
+
+  it('discovers editable targets via the imageField metadata', () => {
+    expect(canvas.documents.imageFieldOf('token')).toBe('texture');
+    expect(canvas.documents.imageFieldOf('wall')).toBeUndefined();
+    expect(canvas.documents.typesWithImage()).toEqual(['token']);
+  });
+
+  it('double-click on an image-editable document opens the editor', async () => {
+    const { dynamicBus } = await import('@openvtt/canvas');
+    const token = await canvas.documents.create('token', { x: 650, y: 450, label: 'EditMe' });
+    const opened: string[] = [];
+    const unsub = dynamicBus(canvas.bus).on('imageEditor:opened', (p: any) => opened.push(p.id));
+    const result = canvas.bus.call('select:doubleclick', { x: token.x, y: token.y, handled: false });
+    unsub();
+    expect(result.handled).toBe(true);
+    expect(opened).toEqual([token.id]);
+    canvas.documents.delete('token', token.id);
+  });
+
+  it('double-click near a non-editable document does not open the editor', async () => {
+    const { dynamicBus } = await import('@openvtt/canvas');
+    const opened: string[] = [];
+    const unsub = dynamicBus(canvas.bus).on('imageEditor:opened', (p: any) => opened.push(p.id));
+    const wall = await canvas.documents.create('wall', { segments: [{ x1: 600, y1: 520, x2: 760, y2: 520 }] });
+    const result = canvas.bus.call('select:doubleclick', { x: 680, y: 570, handled: false });
+    unsub();
+    expect(result.handled).toBe(false);
+    expect(opened).toEqual([]);
+    canvas.documents.delete('wall', wall.id);
+  });
+
+  it('texture change on a token document reloads assets', async () => {
+    const token = await canvas.documents.create('token', { x: 300, y: 300 }) as Token;
+    canvas.documents.update('token', token.id, { texture: 'data:image/png;base64,changed' });
+    expect(token.document.texture).toBe('data:image/png;base64,changed');
+  });
+});
+
+describe('image editor decoupling', () => {
+  it('installs and works without the tokens plugin', async () => {
+    const { Canvas: CanvasCtor } = await import('@openvtt/canvas');
+    const { imageEditorPlugin } = await import('@openvtt/canvas-plugin-image-editor');
+    const bare = new CanvasCtor({} as HTMLElement);
+    await bare.use(imageEditorPlugin);
+    expect(bare.plugins.has('imageEditor')).toBe(true);
+    expect(bare.documents.types()).toEqual([]);
+    const plugin = bare.plugins.get<ImageEditorPlugin>('imageEditor')!;
+    const editor = plugin.createEditor();
+    expect(editor.state.hasSource).toBe(false);
+    const result = bare.bus.call('select:doubleclick', { x: 10, y: 10, handled: false });
+    expect(result.handled).toBe(false);
+    bare.destroy();
+  });
+
+  it('a custom document type becomes editable by declaring imageField', async () => {
+    const { Canvas: CanvasCtor, PlaceableObject, definePlugin } = await import('@openvtt/canvas');
+    const { imageEditorPlugin } = await import('@openvtt/canvas-plugin-image-editor');
+    class Portrait extends PlaceableObject<{ x: number; y: number; art?: string }> {
+      readonly objectType = 'portrait';
+      get bounds() { return { x: -10, y: -10, width: 20, height: 20 }; }
+      refresh(): void {}
+    }
+    const portraitsPlugin = definePlugin({
+      id: 'portraits',
+      install(ctx) {
+        ctx.registerDocumentType({
+          type: 'portrait',
+          placeable: Portrait as never,
+          layer: { label: 'Portraits', order: 600 },
+          imageField: 'art',
+        });
+      },
+    });
+    const bare = new CanvasCtor({} as HTMLElement);
+    await bare.use(imageEditorPlugin);
+    await bare.use(portraitsPlugin);
+    expect(bare.documents.imageFieldOf('portrait')).toBe('art');
+    const doc = await bare.documents.create('portrait', { x: 0, y: 0, art: '' });
+    const editor = bare.plugins.get<ImageEditorPlugin>('imageEditor')!.createEditor();
+    expect(await editor.loadFromDocument('portrait', doc.id)).toBe(false);
+    bare.documents.update('portrait', doc.id, { art: 'data:image/png;base64,zz' });
+    expect((doc.document as Record<string, unknown>).art).toBe('data:image/png;base64,zz');
+    bare.destroy();
   });
 });

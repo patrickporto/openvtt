@@ -32,7 +32,8 @@
     "@openvtt/canvas-plugin-lights": "workspace:*",
     "@openvtt/canvas-plugin-measure": "workspace:*",
     "@openvtt/canvas-plugin-lighting": "workspace:*",
-    "@openvtt/canvas-plugin-fog": "workspace:*"
+    "@openvtt/canvas-plugin-fog": "workspace:*",
+    "@openvtt/canvas-plugin-image-editor": "workspace:*"
   },
   "peerDependencies": {
     "pixi.js": "^8.15.0"

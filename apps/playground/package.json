@@ -15,6 +15,7 @@
     "@openvtt/canvas-preset-standard": "*",
     "@openvtt/canvas-plugin-drawings": "*",
     "@openvtt/canvas-plugin-fog": "*",
+    "@openvtt/canvas-plugin-image-editor": "*",
     "@openvtt/canvas-plugin-lighting": "*",
     "@openvtt/canvas-plugin-lights": "*",
     "@openvtt/canvas-plugin-measure": "*",

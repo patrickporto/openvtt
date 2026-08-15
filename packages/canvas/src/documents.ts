@@ -72,6 +72,16 @@ export class DocumentRegistry {
     return this.byType.get(type)?.def;
   }
 
+  /** Campo de arte do tipo (metadado `imageField`), se o tipo é editável como imagem. */
+  imageFieldOf(type: string): string | undefined {
+    return this.byType.get(type)?.def.imageField;
+  }
+
+  /** Tipos de documento que declaram campo de arte (`imageField`). */
+  typesWithImage(): string[] {
+    return [...this.byType.values()].filter((e) => e.def.imageField !== undefined).map((e) => e.def.type);
+  }
+
   layer(type: string): AnyDocLayer | undefined {
     return this.byType.get(type)?.layer;
   }

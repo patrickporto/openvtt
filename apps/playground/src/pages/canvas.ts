@@ -1,8 +1,13 @@
 import {
   Canvas,
+  MENU_ORDER,
   defineCanvasElements,
+  definePlugin,
   dynamicBus,
+  menu,
+  menuWhen,
   newId,
+  type CanvasPlugin,
   type OpenVTTLayerPanel,
   type SceneDataInput,
   type GridType,
@@ -10,9 +15,11 @@ import {
 import { standardPlugins } from '@openvtt/canvas-preset-standard';
 import { WallsPlugin, chainSegments, ellipsePoints, rectPoints, type WallSegmentDataInput } from '@openvtt/canvas-plugin-walls';
 import { defineFogElements, type OpenVTTFogPanel } from '@openvtt/canvas-plugin-fog';
+import { defineImageEditorElements, OpenVTTImageEditor, ImageEditorPlugin } from '@openvtt/canvas-plugin-image-editor';
 
 defineCanvasElements();
 defineFogElements();
+defineImageEditorElements();
 
 const ICONS = {
   select: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M6 3.5 18.5 11l-5.6 1.8L10.5 18 6 3.5Z"/></svg>`,
@@ -34,6 +41,10 @@ const ICONS = {
   fogPaint: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 18.5a4.5 4.5 0 0 0 .4-8.97 6 6 0 0 0-11.7 1.48 4 4 0 0 0 .3 7.99Z"/><path d="M8 21.5h8M10 18.5h4" opacity=".55"/></svg>`,
   light: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.5c.8.7 1 1.5 1 2.5h6c0-1 .2-1.8 1-2.5A6 6 0 0 0 12 3Z"/></svg>`,
   template: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><circle cx="5" cy="19" r="1.6" fill="currentColor" stroke="none"/><path d="M5 19 20 8M5 19l11.5 3.5M20 8c-2 5-5.5 8-11.5 11.5" opacity=".9"/></svg>`,
+  ping: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4"/><path d="M19.4 4.6a10 10 0 0 1 0 14.8M4.6 19.4a10 10 0 0 1 0-14.8" opacity=".45"/></svg>`,
+  center: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 2.5V7M12 17v4.5M2.5 12H7M17 12h4.5"/></svg>`,
+  rename: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.5H6A1.5 1.5 0 0 0 4.5 6v12A1.5 1.5 0 0 0 6 19.5h12a1.5 1.5 0 0 0 1.5-1.5v-5"/><path d="M17.9 3.6a2 2 0 0 1 2.8 2.8L12.5 14.6l-3.6 1 1-3.6 8-8.4Z"/></svg>`,
+  front: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v11M12 3.5 8.5 7M12 3.5 15.5 7"/><path d="M4.5 13.5v4A2 2 0 0 0 6.5 19.5h11a2 2 0 0 0 2-2v-4" opacity=".7"/></svg>`,
 };
 
 interface ToolDef {
@@ -45,7 +56,7 @@ interface ToolDef {
 }
 
 const TOOLS: ToolDef[] = [
-  { id: 'select', name: 'Select', kbd: 'V', icon: ICONS.select, hint: 'Drag tokens to move (ruler shows distance) · drag wall points to edit (joints move together) · double-click a wall to split · click door to open/close · <kbd>Ctrl</kbd>+right-click door = secret · <kbd>Q</kbd> to ping' },
+  { id: 'select', name: 'Select', kbd: 'V', icon: ICONS.select, hint: 'Drag tokens to move (eased, ruler shows distance) · drag wall points to edit · double-click a wall to split · double-click a token to edit its art · click door to open/close · <kbd>Q</kbd> to ping · right-click opens the context menu' },
   { id: 'hand', name: 'Pan', kbd: 'H', icon: ICONS.hand, hint: 'Drag to pan · mouse wheel or pinch to zoom' },
   { id: 'token', name: 'Token', kbd: 'T', icon: ICONS.token, hint: 'Click to place a token (snaps to grid)' },
   { id: 'wall', name: 'Wall', kbd: 'W', icon: ICONS.wall, hint: 'Pick a mode below · <kbd>Enter</kbd>/double-click finishes a chain · right-click cancels · <kbd>Ctrl</kbd>+right-click dismisses the tool' },
@@ -153,7 +164,7 @@ export function renderCanvas(root: HTMLElement): () => void {
     gridSelect.appendChild(o);
   }
 
-  const canvas = new Canvas(stage, { plugins: standardPlugins });
+  const canvas = new Canvas(stage, { plugins: [...standardPlugins, demoContextMenuPlugin()] });
   (window as unknown as { canvas: Canvas }).canvas = canvas;
   root.querySelector<OpenVTTLayerPanel>('#layer-panel')!.canvas = canvas;
   root.querySelector<OpenVTTFogPanel>('#fog-panel')!.canvas = canvas;
@@ -178,6 +189,80 @@ export function renderCanvas(root: HTMLElement): () => void {
 
   root.querySelector<HTMLDivElement>('#log-head')!.addEventListener('click', () => {
     logPanel.classList.toggle('closed');
+  });
+
+  /* ------------------------- context menu demo ------------------------- */
+
+  function demoContextMenuPlugin(): CanvasPlugin {
+    return definePlugin({
+      id: 'demo-context-menu',
+      name: 'Context Menu Demo',
+      install(ctx) {
+        ctx.registerContextMenu({
+          id: 'demo:scene',
+          when: menuWhen.canvas(),
+          items: [
+            menu.action('demo:ping-here', 'Ping here', {
+              icon: ICONS.ping,
+              order: MENU_ORDER.utility,
+              onClick: (c) => ctx.canvas.ping(c.x, c.y),
+            }),
+            menu.action('demo:center-here', 'Center here', {
+              icon: ICONS.center,
+              order: MENU_ORDER.utility + 10,
+              onClick: (c) => ctx.canvas.centerOn(c.x, c.y),
+            }),
+          ],
+        });
+
+        ctx.bus.tap('contextmenu:items', 'demo', (payload) => ({
+          ...payload,
+          items: [
+            ...payload.items,
+            menu.action('demo:fit-scene', 'Fit scene', {
+              icon: ICONS.fit,
+              order: MENU_ORDER.tail,
+              onClick: () => ctx.canvas.fit(),
+            }),
+          ],
+        }));
+
+        ctx.bus.on('contextmenu:open', ({ target, itemCount }) => {
+          log('menu', target.type === 'object' ? `${target.objectType} · ${itemCount} items` : `canvas · ${itemCount} items`);
+        });
+      },
+    });
+  }
+
+  /* ------------------------- image editor ------------------------- */
+
+  let imageEditorPanel: OpenVTTImageEditor | null = null;
+
+  function openImageEditor(type: string, id: string): void {
+    const imageEditor = canvas.plugins.get<ImageEditorPlugin>('imageEditor');
+    if (!imageEditor) return;
+    if (!imageEditorPanel) {
+      imageEditorPanel = document.createElement('openvtt-image-editor') as OpenVTTImageEditor;
+      imageEditorPanel.style.position = 'absolute';
+      imageEditorPanel.style.top = '64px';
+      imageEditorPanel.style.left = '50%';
+      imageEditorPanel.style.transform = 'translateX(-50%)';
+      imageEditorPanel.style.zIndex = '40';
+      imageEditorPanel.addEventListener('image-edited', (event) => {
+        const detail = (event as CustomEvent<{ type: string; id: string }>).detail;
+        imageEditor.notifyApplied(detail.type, detail.id);
+        log('imageEditor', `art applied to ${detail.type} ${detail.id.slice(0, 8)}`);
+      });
+      root.appendChild(imageEditorPanel);
+    }
+    imageEditorPanel.canvas = canvas;
+    imageEditorPanel.edit(type, id);
+    imageEditorPanel.style.display = 'block';
+  }
+
+  onPluginEvent('imageEditor:opened', ({ type, id }: any) => {
+    log('imageEditor', `editing ${type} ${id.slice(0, 8)}`);
+    openImageEditor(type, id);
   });
 
   /* ------------------------- options bar ------------------------- */
@@ -295,6 +380,10 @@ export function renderCanvas(root: HTMLElement): () => void {
         optionsEl.append(
           miniBtn('Fit', ICONS.fit, false, () => canvas.fit()),
           miniBtn('Delete', ICONS.trash, true, () => canvas.deleteSelected()),
+          miniBtn('Edit image', ICONS.token, false, () => {
+            const target = canvas.selected.find((obj) => canvas.documents.imageFieldOf(obj.objectType));
+            if (target) openImageEditor(target.objectType, target.id);
+          }),
           miniBtn('Join points', ICONS.select, false, () => {
             const joined = walls()?.joinWallEndpoints(8) ?? 0;
             log('wall', joined ? `joined ${joined} endpoints` : 'no endpoints to join');

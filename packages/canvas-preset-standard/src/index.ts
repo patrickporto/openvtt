@@ -8,6 +8,7 @@ import { lightsPlugin } from '@openvtt/canvas-plugin-lights';
 import { measurePlugin } from '@openvtt/canvas-plugin-measure';
 import { lightingPlugin } from '@openvtt/canvas-plugin-lighting';
 import { fogPlugin } from '@openvtt/canvas-plugin-fog';
+import { imageEditorPlugin } from '@openvtt/canvas-plugin-image-editor';
 
 export { tilesPlugin } from '@openvtt/canvas-plugin-tiles';
 export { drawingsPlugin } from '@openvtt/canvas-plugin-drawings';
@@ -18,6 +19,7 @@ export { lightsPlugin } from '@openvtt/canvas-plugin-lights';
 export { measurePlugin } from '@openvtt/canvas-plugin-measure';
 export { lightingPlugin } from '@openvtt/canvas-plugin-lighting';
 export { fogPlugin, defineFogElements } from '@openvtt/canvas-plugin-fog';
+export { imageEditorPlugin, ImageEditorPlugin, ImageEditor, defineImageEditorElements } from '@openvtt/canvas-plugin-image-editor';
 
 /** Plugins do preset padrão, na ordem de instalação recomendada. */
 export const standardPlugins: CanvasPlugin[] = [
@@ -30,6 +32,7 @@ export const standardPlugins: CanvasPlugin[] = [
   measurePlugin,
   lightingPlugin,
   fogPlugin,
+  imageEditorPlugin,
 ];
 
 /**

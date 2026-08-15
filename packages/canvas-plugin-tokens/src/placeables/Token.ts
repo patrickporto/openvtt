@@ -27,6 +27,16 @@ export class Token extends PlaceableObject<TokenData> {
     return { x: -s / 2, y: -s / 2, width: s, height: s };
   }
 
+  /**
+   * Imagem customizada: ao trocar `texture` o asset é recarregado e o token
+   * redesenhado (upload/edição via image editor aplica por aqui).
+   */
+  override update(changes: Partial<TokenData>): void {
+    const textureChanged = changes.texture !== undefined && changes.texture !== this.document.texture;
+    super.update(changes);
+    if (textureChanged) void this.draw();
+  }
+
   protected override async loadAssets(): Promise<void> {
     this.content.removeChildren().forEach((c) => c.destroy({ children: true }));
     this.content.scale.set(1, 1);

@@ -71,6 +71,7 @@ export class TokensPlugin {
         },
       },
       behavior: this.dragBehavior,
+      imageField: 'texture',
     }) as TokensLayer;
 
     ctx.bus.registerEvent('token:moved', v.object({ id: v.string(), x: v.number(), y: v.number() }));
