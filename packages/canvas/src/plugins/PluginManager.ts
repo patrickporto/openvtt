@@ -1,5 +1,6 @@
 import type { Canvas } from '../canvas';
 import type { CanvasBus } from '../bus';
+import type { ContextMenuContribution } from '../contextmenu/types';
 import type { PlaceablesLayer } from '../layers/PlaceablesLayer';
 import type { PlaceableObject } from '../placeables/PlaceableObject';
 import type {
@@ -36,6 +37,11 @@ class PluginContextImpl implements PluginContext {
 
   registerTool(contribution: ToolContribution): void {
     this.canvas.registerTool(contribution);
+  }
+
+  registerContextMenu(contribution: ContextMenuContribution): void {
+    const unregister = this.canvas.contextMenu.register(contribution);
+    this.disposers.push(unregister);
   }
 
   onDispose(fn: () => void): void {

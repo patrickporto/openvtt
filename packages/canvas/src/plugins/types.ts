@@ -1,6 +1,7 @@
 import type { GenericSchema } from 'valibot';
 import type { Canvas } from '../canvas';
 import type { CanvasBus } from '../bus';
+import type { ContextMenuContribution } from '../contextmenu/types';
 import type { CanvasLayer } from '../layers/CanvasLayer';
 import type { PlaceablesLayer } from '../layers/PlaceablesLayer';
 import type { PlaceableObject, CanvasLike, PlaceableObjectOptions } from '../placeables/PlaceableObject';
@@ -99,6 +100,11 @@ export interface PluginContext {
   registerDocumentType<D, I = D>(def: DocumentTypeDefinition<D, I>): PlaceablesLayer<D, PlaceableObject<D>, I>;
   registerLayer(contribution: LayerContribution): void;
   registerTool(contribution: ToolContribution): void;
+  /**
+   * Contribui itens ao context menu do canvas (right-click / long-press).
+   * A contribuição é desfeita automaticamente no uninstall.
+   */
+  registerContextMenu(contribution: ContextMenuContribution): void;
   /** Registra cleanup executado no uninstall do plugin e no destroy do canvas. */
   onDispose(fn: () => void): void;
 }

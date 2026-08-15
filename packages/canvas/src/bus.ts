@@ -1,5 +1,11 @@
 import * as v from 'valibot';
 import { createBus, type EventBus } from '@openvtt/events';
+import {
+  ContextMenuBeforeHookSchema,
+  ContextMenuCloseEventSchema,
+  ContextMenuItemsHookSchema,
+  ContextMenuOpenEventSchema,
+} from './contextmenu/types';
 
 const PointSchema = v.object({ x: v.number(), y: v.number() });
 const PointerSchema = v.object({
@@ -43,6 +49,8 @@ const canvasEvents = {
   'document:update': v.looseObject({ type: v.string(), id: v.string() }),
   'document:delete': v.object({ type: v.string(), id: v.string() }),
   'document:moved': v.object({ type: v.string(), id: v.string(), x: v.number(), y: v.number() }),
+  'contextmenu:open': ContextMenuOpenEventSchema,
+  'contextmenu:close': ContextMenuCloseEventSchema,
 };
 
 const SegmentSchema = v.object({ a: PointSchema, b: PointSchema });
@@ -87,6 +95,11 @@ const SelectHoverSchema = v.looseObject({
  * - `select:pointerdown` (bail): plugins interceptam o clique da Select tool
  *   (ex.: portas). Retornar `{...payload, handled: true}` interrompe.
  * - `select:hovercursor` (bail): plugins definem o cursor de hover.
+ * - `contextmenu:before` (bail): plugins/tools vetam a abertura do menu
+ *   (ex.: right-click usado pela tool de walls). Retornar
+ *   `{...payload, handled: true}` suprime o menu.
+ * - `contextmenu:items` (waterfall): plugins adicionam itens ao menu
+ *   (ações, toggles, separadores, submenus e conteúdo custom).
  */
 const canvasHooks = {
   beforeDraw: {
@@ -163,6 +176,14 @@ const canvasHooks = {
       shiftKey: v.optional(v.boolean(), false),
       handled: v.optional(v.boolean(), false),
     }),
+  },
+  'contextmenu:before': {
+    strategy: 'syncBail' as const,
+    schema: ContextMenuBeforeHookSchema,
+  },
+  'contextmenu:items': {
+    strategy: 'syncWaterfall' as const,
+    schema: ContextMenuItemsHookSchema,
   },
 };
 

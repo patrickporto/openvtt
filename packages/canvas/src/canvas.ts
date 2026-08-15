@@ -21,6 +21,8 @@ import { segmentsIntersect, toHex } from './utils';
 import { DocumentRegistry } from './documents';
 import { PluginManager } from './plugins/PluginManager';
 import type { CanvasPlugin, ToolContribution } from './plugins/types';
+import { ContextMenuManager } from './contextmenu/ContextMenuManager';
+import { defineCanvasElements } from './ui';
 
 export interface CanvasOptions {
   background?: number | string;
@@ -31,6 +33,8 @@ export interface CanvasOptions {
   tools?: ToolOptions;
   /** Plugins instalados automaticamente antes do initialize(). */
   plugins?: CanvasPlugin[];
+  /** Se false, desativa o context menu (right-click/long-press). Default true. */
+  contextMenu?: boolean;
 }
 
 type AnyPlaceablesLayer = PlaceablesLayer<any, PlaceableObject<any>, any>;
@@ -60,6 +64,7 @@ export class Canvas implements CanvasLike {
 
   readonly documents: DocumentRegistry;
   readonly plugins: PluginManager;
+  readonly contextMenu: ContextMenuManager;
 
   viewport: CanvasViewport | null = null;
   inputs!: InputsManager;
@@ -102,6 +107,7 @@ export class Canvas implements CanvasLike {
     this.layers = new LayerManager(this);
     this.documents = new DocumentRegistry(this);
     this.plugins = new PluginManager(this);
+    this.contextMenu = new ContextMenuManager(this);
     this.animation = new CanvasAnimation(this.app.ticker);
 
     for (const layer of [this.background, this.grid, this.preview, this.handles]) {
@@ -354,6 +360,11 @@ export class Canvas implements CanvasLike {
     });
     this.app.ticker.add(this.tickInputs, this);
 
+    defineCanvasElements();
+    if (this.options.contextMenu !== false) {
+      this.contextMenu.attachTo(this.container);
+    }
+
     this.initialized = true;
     this.bus.emit('ready', { width, height });
   }
@@ -365,6 +376,23 @@ export class Canvas implements CanvasLike {
   private dispatchInput(name: StateEventName, info?: unknown): void {
     this.tools.handleEvent(name, info);
     this.notifyToolChanged();
+    if (name === 'contextmenu') {
+      if (this.options.contextMenu !== false) {
+        this.contextMenu.openFromPointer(info as CanvasPointerInfo);
+      }
+      return;
+    }
+    if (name === 'longpress') {
+      const longPress = info as CanvasPointerInfo;
+      if (
+        longPress.device === 'touch' &&
+        this.options.contextMenu !== false &&
+        this.getCurrentToolId() === 'select'
+      ) {
+        this.contextMenu.openFromPointer(longPress);
+      }
+      return;
+    }
     const pointer = info as CanvasPointerInfo | undefined;
     if (!pointer) return;
     if (name === 'pointerdown') {
@@ -503,6 +531,7 @@ export class Canvas implements CanvasLike {
     this._resizeObserver?.disconnect();
     this.app.ticker?.remove(this.tickInputs, this);
     this.inputs?.destroy();
+    this.contextMenu.destroy();
     this.plugins.disposeAllSync();
     this.animation.cancelAll();
     this.bus.emit('destroy', {});

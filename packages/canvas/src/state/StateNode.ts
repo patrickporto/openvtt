@@ -20,6 +20,7 @@ export type StateEventName =
   | 'pointerup'
   | 'doubleclick'
   | 'longpress'
+  | 'contextmenu'
   | 'keydown'
   | 'keyup'
   | 'wheel'
@@ -34,6 +35,7 @@ const HANDLER_BY_EVENT: Record<StateEventName, string> = {
   pointerup: 'onPointerUp',
   doubleclick: 'onDoubleClick',
   longpress: 'onLongPress',
+  contextmenu: 'onContextMenu',
   keydown: 'onKeyDown',
   keyup: 'onKeyUp',
   wheel: 'onWheel',
@@ -130,6 +132,7 @@ export abstract class StateNode {
   onPointerUp(_info: CanvasPointerInfo): void {}
   onDoubleClick(_info: CanvasClickInfo): void {}
   onLongPress(_info: CanvasPointerInfo): void {}
+  onContextMenu(_info: CanvasPointerInfo): void {}
   onKeyDown(_info: CanvasKeyInfo): void {}
   onKeyUp(_info: CanvasKeyInfo): void {}
   onWheel(_info: CanvasWheelInfo): void {}

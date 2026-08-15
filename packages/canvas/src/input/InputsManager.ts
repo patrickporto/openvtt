@@ -122,7 +122,7 @@ export class InputsManager {
     this.on(window, 'pointerup', (e) => this.handlePointerUp(e as PointerEvent));
     this.on(window, 'pointercancel', (e) => this.handlePointerUp(e as PointerEvent));
     this.on(el, 'wheel', (e) => this.handleWheel(e as WheelEvent), { passive: false });
-    this.on(el, 'contextmenu', (e) => e.preventDefault());
+    this.on(el, 'contextmenu', (e) => this.handleContextMenu(e));
     this.on(window, 'keydown', (e) => this.handleKeyDown(e as KeyboardEvent));
     this.on(window, 'keyup', (e) => this.handleKeyUp(e as KeyboardEvent));
     this.on(window, 'blur', () => this.resetTransient());
@@ -149,7 +149,7 @@ export class InputsManager {
 
   /* ---------- helpers ---------- */
 
-  private screenFromEvent(e: PointerEvent | WheelEvent): Point {
+  private screenFromEvent(e: PointerEvent | WheelEvent | MouseEvent): Point {
     const rect = this.deps.element.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
@@ -280,6 +280,28 @@ export class InputsManager {
 
     const target = tracked ? undefined : this.detectTarget(this.deps.toWorld(screen));
     this.deps.dispatch('pointermove', this.pointerInfo(e, screen, target));
+  }
+
+  /**
+   * Right-click (menu de contexto do navegador suprimido): normaliza o
+   * evento com hit-test e despacha `contextmenu` com o mesmo formato dos
+   * demais eventos de ponteiro.
+   */
+  private handleContextMenu(e: MouseEvent): void {
+    e.preventDefault();
+    if (!this.deps.isEnabled()) return;
+    this.updateModifiers(e);
+    const screen = this.screenFromEvent(e);
+    this.currentScreen = screen;
+    const info: CanvasPointerInfo = {
+      ...this.baseInfo(screen),
+      button: e.button,
+      buttons: e.buttons,
+      pointerId: -1,
+      device: 'mouse',
+      target: this.detectTarget(this.deps.toWorld(screen)),
+    };
+    this.deps.dispatch('contextmenu', info);
   }
 
   private handlePointerUp(e: PointerEvent): void {

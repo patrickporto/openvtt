@@ -20,6 +20,26 @@ export type {
 
 export { DocumentRegistry } from './documents';
 
+/* ---------------------------- context menu ----------------------------- */
+
+export { ContextMenuManager, normalizeItems } from './contextmenu/ContextMenuManager';
+export { menu, menuWhen, MENU_ORDER } from './contextmenu/builders';
+export { menuControls, sliderRow, colorRow, textRow } from './contextmenu/controls';
+export type { MenuSliderSpec, MenuColorSpec, MenuTextSpec } from './contextmenu/controls';
+export type {
+  ContextMenuItem,
+  ContextMenuAction,
+  ContextMenuToggle,
+  ContextMenuSeparator,
+  ContextMenuCustom,
+  ContextMenuItemBase,
+  ContextMenuContext,
+  ContextMenuPredicate,
+  ContextMenuTarget,
+  ContextMenuContribution,
+  ContextMenuCloseReason,
+} from './contextmenu/types';
+
 /* ------------------------------- layers ------------------------------- */
 
 export { CanvasLayer } from './layers/CanvasLayer';
@@ -100,7 +120,13 @@ export { HistoryManager } from './history/HistoryManager';
 
 /* ---------------------------------- ui -------------------------------- */
 
-export { defineCanvasElements, OpenVTTLayerPanel, LAYER_PANEL_TAG } from './ui';
+export {
+  defineCanvasElements,
+  OpenVTTLayerPanel,
+  LAYER_PANEL_TAG,
+  OpenVTTContextMenu,
+  CONTEXT_MENU_TAG,
+} from './ui';
 
 /* ------------------------------ infra --------------------------------- */
 
