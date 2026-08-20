@@ -36,6 +36,7 @@ All packages are pure ESM, built with tsup, and tested with `bun test`. Shared c
 | [Character sheets](guides/character-sheets.md) | System packs, the compute pipeline, effects, durations, triggers, and roll templates |
 | [3D dice](guides/3d-dice.md) | `DiceBox` setup, options, rolling API, themes, models, sounds, and selection |
 | [Assets and rendering](guides/assets-and-rendering.md) | The lower-level building blocks: `@openvtt/assets`, `@openvtt/physics`, `@openvtt/render3d` |
+| [Publishing](guides/publishing.md) | How the playground is deployed to Codeberg Pages and the docs mirrored to the wiki |
 
 ## Conventions
 
