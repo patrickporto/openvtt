@@ -3,48 +3,9 @@ when:
   event: [push, manual]
 
 steps:
-  build-playground:
+  verify:
     image: oven/bun:1.2.0
     commands:
       - bun install
-      - BASE_PATH=/$CI_REPO_NAME/ bun run build --filter=playground
-
-  publish-pages:
-    image: alpine:3.21
-    depends_on: [build-playground]
-    commands:
-      - apk add --no-cache git
-      - |
-        cd apps/playground/dist
-        git init -q -b pages .
-        git config user.name "Woodpecker CI"
-        git config user.email "woodpecker@noreply.codeberg.org"
-        git add -A
-        git commit -qm "deploy playground ${CI_COMMIT_SHA}"
-        git push -qf "https://$CODEBERG_TOKEN@codeberg.org/$CI_REPO_OWNER/$CI_REPO_NAME.git" pages
-    secrets: [codeberg_token]
-
-  publish-wiki:
-    image: alpine:3.21
-    depends_on: [build-playground]
-    commands:
-      - apk add --no-cache git
-      - |
-        git clone -q --depth 1 "https://$CODEBERG_TOKEN@codeberg.org/$CI_REPO_OWNER/$CI_REPO_NAME.wiki.git" wiki || true
-        if [ ! -d wiki/.git ]; then
-          mkdir -p wiki
-          cd wiki
-          git init -q -b master .
-          git remote add origin "https://$CODEBERG_TOKEN@codeberg.org/$CI_REPO_OWNER/$CI_REPO_NAME.wiki.git"
-          cd ..
-        fi
-      - cp docs/README.md wiki/Home.md
-      - for f in docs/guides/*.md; do cp "$f" "wiki/guide-$(basename "$f")"; done
-      - for f in docs/api/*.md; do cp "$f" "wiki/api-$(basename "$f")"; done
-      - |
-        sed -i -e 's|\.\./guides/|guide-|g' -e 's|\.\./api/|api-|g' -e 's|(guides/|guide-|g' -e 's|(api/|api-|g' wiki/*.md
-        cd wiki
-        git add -A
-        git commit -qm "sync docs from ${CI_COMMIT_SHA}" || exit 0
-        git push -q origin HEAD
-    secrets: [codeberg_token]
+      - bun run typecheck
+      - bun run test
