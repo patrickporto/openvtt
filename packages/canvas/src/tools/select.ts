@@ -39,6 +39,15 @@ function transformFields(canvas: Tool['canvas'], obj: PlaceableObject): Record<s
   return { x: obj.x, y: obj.y, rotation: doc.rotation ?? 0 };
 }
 
+/** Campo de documento que recebe o ângulo do gesto de rotação. */
+function rotationFieldOf(canvas: Tool['canvas'], obj: PlaceableObject): string {
+  return defOf(canvas, obj)?.transform?.rotationField ?? 'rotation';
+}
+
+function angleOf(value: unknown, fallback: number): number {
+  return typeof value === 'number' ? value : fallback;
+}
+
 interface TransformSnapshot {
   obj: PlaceableObject;
   aabb: { minX: number; minY: number; width: number; height: number };
@@ -453,12 +462,12 @@ class SelectRotating extends Tool {
   private committed = false;
 
   override onEnter(): void {
-    const aabb = this.canvas.handles.getAABB();
-    if (!aabb) {
+    const center = this.canvas.handles.getRotationCenter();
+    if (!center) {
       this.parent?.transition('idle');
       return;
     }
-    this.center = { x: (aabb.minX + aabb.maxX) / 2, y: (aabb.minY + aabb.maxY) / 2 };
+    this.center = center;
     const point = this.inputs.getCurrentWorldPoint();
     this.startAngle = Math.atan2(point.y - this.center.y, point.x - this.center.x);
     this.snapshots = takeSnapshots(
@@ -477,12 +486,13 @@ class SelectRotating extends Tool {
     const sin = Math.sin(angle);
 
     for (const snap of this.snapshots) {
+      const field = rotationFieldOf(this.canvas, snap.obj);
       const dx = snap.x - this.center.x;
       const dy = snap.y - this.center.y;
       snap.obj.update({
         x: this.center.x + dx * cos - dy * sin,
         y: this.center.y + dx * sin + dy * cos,
-        rotation: snap.rotation + angle,
+        [field]: angleOf(snap.before[field], snap.rotation) + angle,
       });
       this.canvas.reindex(snap.obj);
       this.changed = true;
@@ -495,8 +505,17 @@ class SelectRotating extends Tool {
     if (this.changed) {
       this.canvas.history.beginBatch();
       for (const snap of this.snapshots) {
-        const after = { x: snap.obj.x, y: snap.obj.y, rotation: snap.obj.rotation };
-        const before = { x: snap.before.x, y: snap.before.y, rotation: snap.before.rotation };
+        const field = rotationFieldOf(this.canvas, snap.obj);
+        const after = {
+          x: snap.obj.x,
+          y: snap.obj.y,
+          [field]: angleOf((snap.obj.document as Record<string, unknown>)[field], snap.obj.rotation),
+        };
+        const before = {
+          x: snap.before.x,
+          y: snap.before.y,
+          [field]: angleOf(snap.before[field], snap.rotation),
+        };
         this.canvas.commitTransform(snap.obj, after, before);
       }
       this.canvas.history.endBatch();

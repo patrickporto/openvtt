@@ -1,6 +1,7 @@
 import type { GenericSchema } from 'valibot';
 import type { Canvas } from '../canvas';
 import type { CanvasBus } from '../bus';
+import type { Point } from '../input/types';
 import type { ContextMenuContribution } from '../contextmenu/types';
 import type { CanvasLayer } from '../layers/CanvasLayer';
 import type { PlaceablesLayer } from '../layers/PlaceablesLayer';
@@ -26,6 +27,20 @@ export interface TransformAdapter<D = any> {
   snapshotFields(obj: PlaceableObject<D>): Record<string, unknown>;
   /** Converte o retângulo-alvo do gesto de resize em mudanças de documento. */
   applyResize(obj: PlaceableObject<D>, rect: ResizeRect): Partial<D> | null;
+  /**
+   * Campo do documento que carrega o ângulo do placeable (default
+   * 'rotation'). Tipos que giram por outro campo (ex.: 'direction' nos
+   * templates) declaram aqui — o gesto de rotação e o respectivo commit
+   * passam a ler/escrever nele (deve estar incluído em `snapshotFields`).
+   */
+  rotationField?: string;
+  /**
+   * Pivo em coordenadas de mundo em torno do qual o gesto de rotação gira
+   * o placeable (ex.: a origem/ponta de um cone). Default: centro do AABB
+   * da seleção. Aplicado apenas com um único objeto selecionado; seleções
+   * múltiplas giram em torno do centro combinado.
+   */
+  rotationPivot?(obj: PlaceableObject<D>): Point | null;
 }
 
 /**

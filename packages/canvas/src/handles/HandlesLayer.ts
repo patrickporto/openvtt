@@ -2,7 +2,7 @@ import { Graphics } from 'pixi.js';
 import { CanvasLayer } from '../layers/CanvasLayer';
 import { CONFIG } from '../config';
 import type { Canvas } from '../canvas';
-import type { PlaceableObject } from '../placeables/PlaceableObject';
+import type { PlaceableObject, SelectionFrame } from '../placeables/PlaceableObject';
 import type { Point } from '../input/types';
 
 export type HandleCorner = 'tl' | 'tr' | 'bl' | 'br';
@@ -91,22 +91,74 @@ export class HandlesLayer extends CanvasLayer {
 
   get transformable(): boolean {
     const objects = this.canvas.selected;
-    return objects.length > 0 && objects.every((obj) => isTransformable(this.canvas, obj));
+    return objects.length > 0 && objects.every((obj) => !obj.isLocked && isTransformable(this.canvas, obj));
+  }
+
+  /**
+   * Centro do gesto de rotação: o pivo declarado pelo tipo do documento
+   * (ex.: ponta do cone) quando há um único objeto selecionado, senão o
+   * centro do AABB da seleção.
+   */
+  getRotationCenter(): Point | null {
+    const objects = this.canvas.selected;
+    if (objects.length === 1) {
+      const obj = objects[0];
+      const pivot = this.canvas.documents.definition(obj.objectType)?.transform?.rotationPivot?.(obj);
+      if (pivot) return pivot;
+    }
+    const aabb = this.getAABB();
+    if (!aabb) return null;
+    return { x: (aabb.minX + aabb.maxX) / 2, y: (aabb.minY + aabb.maxY) / 2 };
+  }
+
+  /**
+   * Frame orientado da seleção: com um único objeto selecionado a caixa e os
+   * handles giram junto com ele; seleções múltiplas usam o AABB combinado.
+   */
+  get selectionFrame(): SelectionFrame | null {
+    const objects = this.canvas.selected;
+    if (objects.length !== 1) return null;
+    return objects[0].getSelectionFrame();
+  }
+
+  private framePoint(frame: SelectionFrame, fx: number, fy: number): Point {
+    const cos = Math.cos(frame.angle);
+    const sin = Math.sin(frame.angle);
+    return { x: frame.cx + fx * cos - fy * sin, y: frame.cy + fx * sin + fy * cos };
   }
 
   /** Handles do core: resize nos cantos + rotação acima da caixa. */
   coreHandles(): HandleEntry[] {
     const aabb = this.getAABB();
     if (!aabb || !this.transformable) return [];
-    const cx = (aabb.minX + aabb.maxX) / 2;
-    const rotY = aabb.minY - ROTATE_OFFSET_SCREEN / this.viewScale;
-    return [
-      { info: { type: 'resize', corner: 'tl' }, x: aabb.minX, y: aabb.minY, shape: 'square' },
-      { info: { type: 'resize', corner: 'tr' }, x: aabb.maxX, y: aabb.minY, shape: 'square' },
-      { info: { type: 'resize', corner: 'bl' }, x: aabb.minX, y: aabb.maxY, shape: 'square' },
-      { info: { type: 'resize', corner: 'br' }, x: aabb.maxX, y: aabb.maxY, shape: 'square' },
-      { info: { type: 'rotate' }, x: cx, y: rotY, shape: 'rotate' },
+    const frame = this.selectionFrame;
+    if (!frame) {
+      const cx = (aabb.minX + aabb.maxX) / 2;
+      const rotY = aabb.minY - ROTATE_OFFSET_SCREEN / this.viewScale;
+      return [
+        { info: { type: 'resize', corner: 'tl' }, x: aabb.minX, y: aabb.minY, shape: 'square' },
+        { info: { type: 'resize', corner: 'tr' }, x: aabb.maxX, y: aabb.minY, shape: 'square' },
+        { info: { type: 'resize', corner: 'bl' }, x: aabb.minX, y: aabb.maxY, shape: 'square' },
+        { info: { type: 'resize', corner: 'br' }, x: aabb.maxX, y: aabb.maxY, shape: 'square' },
+        { info: { type: 'rotate' }, x: cx, y: rotY, shape: 'rotate' },
+      ];
+    }
+    const hw = frame.width / 2;
+    const hh = frame.height / 2;
+    const off = ROTATE_OFFSET_SCREEN / this.viewScale;
+    const corners: Array<[HandleCorner, number, number]> = [
+      ['tl', -hw, -hh],
+      ['tr', hw, -hh],
+      ['bl', -hw, hh],
+      ['br', hw, hh],
     ];
+    const handles: HandleEntry[] = corners.map(([corner, fx, fy]) => {
+      const p = this.framePoint(frame, fx, fy);
+      return { info: { type: 'resize', corner }, x: p.x, y: p.y, shape: 'square' };
+    });
+    const rot = this.framePoint(frame, 0, -hh - off);
+    handles.push({ info: { type: 'rotate' }, x: rot.x, y: rot.y, shape: 'rotate' });
+    return handles;
   }
 
   /** Handles customizados contribuídos pelos plugins (hook handles:collect). */
@@ -145,11 +197,27 @@ export class HandlesLayer extends CanvasLayer {
     const lw = 1.5 / this.viewScale;
     const color = CONFIG.selection.color;
     const hs = HANDLE_SCREEN / this.viewScale;
-    g.rect(aabb.minX, aabb.minY, aabb.maxX - aabb.minX, aabb.maxY - aabb.minY).stroke({
-      color,
-      width: lw,
-      alpha: 0.9,
-    });
+    const frame = this.selectionFrame;
+    if (frame) {
+      const hw = frame.width / 2;
+      const hh = frame.height / 2;
+      const tl = this.framePoint(frame, -hw, -hh);
+      const tr = this.framePoint(frame, hw, -hh);
+      const br = this.framePoint(frame, hw, hh);
+      const bl = this.framePoint(frame, -hw, hh);
+      g.moveTo(tl.x, tl.y)
+        .lineTo(tr.x, tr.y)
+        .lineTo(br.x, br.y)
+        .lineTo(bl.x, bl.y)
+        .closePath()
+        .stroke({ color, width: lw, alpha: 0.9 });
+    } else {
+      g.rect(aabb.minX, aabb.minY, aabb.maxX - aabb.minX, aabb.maxY - aabb.minY).stroke({
+        color,
+        width: lw,
+        alpha: 0.9,
+      });
+    }
     for (const handle of this.allHandles()) {
       if (handle.shape === 'square') {
         g.rect(handle.x - hs / 2, handle.y - hs / 2, hs, hs)
@@ -157,9 +225,15 @@ export class HandlesLayer extends CanvasLayer {
           .stroke({ color, width: lw });
       } else if (handle.shape === 'rotate') {
         const r = hs / 2;
-        g.moveTo(handle.x, aabb.minY)
-          .lineTo(handle.x, handle.y + r)
-          .stroke({ color, width: lw, alpha: 0.6 });
+        if (frame) {
+          const top = this.framePoint(frame, 0, -frame.height / 2);
+          const tip = this.framePoint(frame, 0, -frame.height / 2 - ROTATE_OFFSET_SCREEN / this.viewScale + r);
+          g.moveTo(top.x, top.y).lineTo(tip.x, tip.y).stroke({ color, width: lw, alpha: 0.6 });
+        } else {
+          g.moveTo(handle.x, aabb.minY)
+            .lineTo(handle.x, handle.y + r)
+            .stroke({ color, width: lw, alpha: 0.6 });
+        }
         g.circle(handle.x, handle.y, r)
           .fill(0xffffff)
           .stroke({ color, width: lw });

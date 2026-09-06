@@ -25,8 +25,7 @@ export class AmbientLight extends PlaceableObject<LightData> {
   }
 
   get bounds() {
-    const r = this.dimRadius;
-    return { x: -r, y: -r, width: r * 2, height: r * 2 };
+    return { x: -20, y: -20, width: 40, height: 40 };
   }
 
   override refresh(): void {

@@ -28,6 +28,15 @@ export interface PlaceableObjectOptions {
   interactive?: boolean;
 }
 
+/** Retângulo orientado (mundo) da seleção: gira junto com o placeable. */
+export interface SelectionFrame {
+  cx: number;
+  cy: number;
+  width: number;
+  height: number;
+  angle: number;
+}
+
 /**
  * Objeto posicionável "burro": não trata input nem se move sozinho. A camada de
  * interação (tools) é responsável por selecionar, arrastar e posicionar.
@@ -85,19 +94,63 @@ export abstract class PlaceableObject<D = Record<string, unknown>> extends Conta
 
   getAABB(): { minX: number; minY: number; maxX: number; maxY: number } {
     const b = this.bounds;
-    const cx = this.position.x + b.x + b.width / 2;
-    const cy = this.position.y + b.y + b.height / 2;
-    const hw = b.width / 2;
-    const hh = b.height / 2;
     const r = this.rotation || 0;
     if (r === 0) {
-      return { minX: cx - hw, minY: cy - hh, maxX: cx + hw, maxY: cy + hh };
+      return {
+        minX: this.position.x + b.x,
+        minY: this.position.y + b.y,
+        maxX: this.position.x + b.x + b.width,
+        maxY: this.position.y + b.y + b.height,
+      };
     }
-    const cos = Math.abs(Math.cos(r));
-    const sin = Math.abs(Math.sin(r));
-    const ow = hw * cos + hh * sin;
-    const oh = hw * sin + hh * cos;
-    return { minX: cx - ow, minY: cy - oh, maxX: cx + ow, maxY: cy + oh };
+    const cos = Math.cos(r);
+    const sin = Math.sin(r);
+    const corners: Array<[number, number]> = [
+      [b.x, b.y],
+      [b.x + b.width, b.y],
+      [b.x, b.y + b.height],
+      [b.x + b.width, b.y + b.height],
+    ];
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const [lx, ly] of corners) {
+      const wx = this.position.x + lx * cos - ly * sin;
+      const wy = this.position.y + lx * sin + ly * cos;
+      if (wx < minX) minX = wx;
+      if (wx > maxX) maxX = wx;
+      if (wy < minY) minY = wy;
+      if (wy > maxY) maxY = wy;
+    }
+    return { minX, minY, maxX, maxY };
+  }
+
+  /**
+   * Caixa de seleção orientada: o retângulo apertado dos bounds locais
+   * girado pelo ângulo do placeable. O pivô da rotação é a origem local
+   * (position), então o centro do bounds é rotacionado junto — placeables
+   * centrados (tokens) e ancorados no canto (retângulos, tiles) ficam
+   * corretos. Placeables cuja rotação vive em outro campo (ex.:
+   * 'direction') sobrescrevem para reportar o ângulo correto.
+   */
+  getSelectionFrame(): SelectionFrame {
+    const b = this.bounds;
+    const r = this.rotation || 0;
+    const lx = b.x + b.width / 2;
+    const ly = b.y + b.height / 2;
+    if (r === 0) {
+      return { cx: this.position.x + lx, cy: this.position.y + ly, width: b.width, height: b.height, angle: 0 };
+    }
+    const cos = Math.cos(r);
+    const sin = Math.sin(r);
+    return {
+      cx: this.position.x + lx * cos - ly * sin,
+      cy: this.position.y + lx * sin + ly * cos,
+      width: b.width,
+      height: b.height,
+      angle: r,
+    };
   }
 
   async draw(): Promise<this> {
