@@ -6,12 +6,16 @@ import type { TokensPlugin, ImageEditorPlugin } from '@openvtt/canvas-preset-sta
 
 let canvas: Canvas;
 const created: string[] = [];
+const GLOBAL_KEYS = ['HTMLElement', 'customElements', 'document'] as const;
+const savedGlobals = new Map<string, unknown>();
 
 beforeAll(async () => {
-  (globalThis as Record<string, unknown>).HTMLElement = class FakeHTMLElement {};
-  (globalThis as Record<string, unknown>).customElements = { get: () => undefined, define: () => {} };
+  const scope = globalThis as Record<string, unknown>;
+  for (const key of GLOBAL_KEYS) savedGlobals.set(key, scope[key]);
+  scope.HTMLElement = class FakeHTMLElement {};
+  scope.customElements = { get: () => undefined, define: () => {} };
   const fakeElement = () => ({ getContext: () => null, width: 0, height: 0, style: {} });
-  (globalThis as Record<string, unknown>).document = {
+  scope.document = {
     createElement: () => fakeElement(),
     createElementNS: () => fakeElement(),
   };
@@ -26,6 +30,12 @@ beforeAll(async () => {
 
 afterAll(() => {
   canvas?.destroy();
+  const scope = globalThis as Record<string, unknown>;
+  for (const key of GLOBAL_KEYS) {
+    const saved = savedGlobals.get(key);
+    if (saved === undefined) delete scope[key];
+    else scope[key] = saved;
+  }
 });
 
 describe('plugin composition', () => {

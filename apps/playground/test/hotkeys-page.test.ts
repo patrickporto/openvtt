@@ -1,13 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { hotkeys } from '../src/hotkeys';
 import { renderHotkeys } from '../src/pages/hotkeys';
-
-GlobalRegistrator.register();
-
-afterAll(() => {
-  GlobalRegistrator.unregister();
-});
 
 describe('Hotkeys Lab page', () => {
   let cleanup: () => void;

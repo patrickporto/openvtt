@@ -1,13 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { RollTablesRegistry } from '@openvtt/canvas-plugin-roll-tables';
 import { buildRollTablesWindow, tableToDef } from '../src/pages/rolltables-window';
-
-GlobalRegistrator.register();
-
-afterAll(() => {
-  GlobalRegistrator.unregister();
-});
 
 const treasure = {
   name: 'Tesouro',
