@@ -1,7 +1,8 @@
 import { Graphics, Text } from 'pixi.js';
-import { PlaceableObject, toHex, type CanvasLike, type Point } from '@openvtt/canvas';
+import { GridRenderer, PlaceableObject, toHex, type CanvasLike, type Point, type SelectionFrame } from '@openvtt/canvas';
 import type { TemplateData } from '../schemas';
 import { bboxOf, conePoints, rayPoints } from '../templates/geometry';
+import { affectedCells, footprintOf } from '../templates/cells';
 
 export class AoETemplate extends PlaceableObject<TemplateData> {
   readonly objectType = 'template';
@@ -44,6 +45,40 @@ export class AoETemplate extends PlaceableObject<TemplateData> {
     return bboxOf(points);
   }
 
+  override getSelectionFrame(): SelectionFrame {
+    const doc = this.document;
+    const length = doc.distance * this.cell;
+    if (doc.shape === 'circle') {
+      return { cx: this.x, cy: this.y, width: length * 2, height: length * 2, angle: 0 };
+    }
+    const points = this.localPoints();
+    if (!points) return super.getSelectionFrame();
+    const direction = doc.direction ?? 0;
+    const cos = Math.cos(direction);
+    const sin = Math.sin(direction);
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const p of points) {
+      const x = p.x * cos + p.y * sin;
+      const y = -p.x * sin + p.y * cos;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    const bx = (minX + maxX) / 2;
+    const by = (minY + maxY) / 2;
+    return {
+      cx: this.x + bx * cos - by * sin,
+      cy: this.y + bx * sin + by * cos,
+      width: maxX - minX,
+      height: maxY - minY,
+      angle: direction,
+    };
+  }
+
   override refresh(): void {
     const g = this.shape;
     g.clear();
@@ -51,6 +86,8 @@ export class AoETemplate extends PlaceableObject<TemplateData> {
     const length = doc.distance * this.cell;
     const color = this.color;
     const fillAlpha = doc.fillAlpha ?? 0.25;
+
+    this.drawAffectedCells(g, color);
 
     if (doc.shape === 'circle') {
       g.circle(0, 0, length).fill({ color, alpha: fillAlpha });
@@ -76,6 +113,23 @@ export class AoETemplate extends PlaceableObject<TemplateData> {
     const length = doc.distance * this.cell;
     if (doc.shape === 'circle') return { x: 0, y: -length };
     return { x: Math.cos(doc.direction ?? 0) * length, y: Math.sin(doc.direction ?? 0) * length };
+  }
+
+  private drawAffectedCells(g: Graphics, color: number): void {
+    const grid = this.canvas.grid;
+    const size = grid.size;
+    const px = this.position.x;
+    const py = this.position.y;
+    for (const center of affectedCells(footprintOf(this.document, size), grid)) {
+      const cell = GridRenderer.getCellShape(center.x, center.y, grid.type, size, grid.offsetX ?? 0, grid.offsetY ?? 0);
+      if (!cell) continue;
+      if (cell.type === 'rect') {
+        const [x, y, w, h] = cell.data;
+        g.rect(x - px, y - py, w, h).fill({ color, alpha: 0.18 });
+      } else {
+        g.poly(cell.data.map((v, i) => v - (i % 2 === 0 ? px : py))).fill({ color, alpha: 0.18 });
+      }
+    }
   }
 
   protected override loadAssets(): Promise<void> {

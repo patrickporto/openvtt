@@ -19,6 +19,20 @@ export function registerTemplatesContextMenu(ctx: PluginContext): void {
       };
 
       return [
+        menu.custom('templates:direction', () => {
+          const original = doc.direction ?? 0;
+          const initial = Math.round(((((original * 180) / Math.PI) % 360) + 360) % 360);
+          return menuControls.slider({
+            label: 'Direction',
+            min: 0,
+            max: 360,
+            step: 1,
+            value: initial,
+            format: (deg) => `${deg}°`,
+            live: (deg) => obj.update({ direction: (deg * Math.PI) / 180 }),
+            commit: (deg) => commit({ direction: (deg * Math.PI) / 180 }, { direction: original }),
+          });
+        }, { height: 30, order: MENU_ORDER.transform, when: () => shape !== 'circle' }),
         menu.custom('templates:distance', () => {
           const original = doc.distance;
           return menuControls.slider({

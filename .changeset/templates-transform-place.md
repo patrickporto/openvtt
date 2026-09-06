@@ -1,0 +1,6 @@
+---
+"@openvtt/canvas": minor
+"@openvtt/canvas-plugin-templates": minor
+---
+
+Transformable templates and Foundry-style placement. Templates (circle/cone/ray) can now be resized and rotated after placement through the Select tool handles: the templates plugin registers a `TransformAdapter` with proportional-anchor scaling (rays scale `width` together, clamped to the schema minimum) and the core `TransformAdapter` gains `rotationField` so types that rotate via a custom document field (templates use `direction`) participate in the rotate gesture, history and undo. During placement the template tool is now a two-step flow — click to set the origin, drag to size and aim with a live distance label and Foundry-style affected-cell highlighting, then click again to place. The wheel rotates cones/rays (15° steps when snapping) or resizes circles, with a core wheel-capture convention that suppresses viewport zoom while a tool leaf overrides `onWheel`. Snapping is on by default (origin snaps to grid intersections, distance to half cells) with a `snap` tool option to disable it and Shift as a temporary invert. Placed templates also render their affected grid cells, and the playground gains a Snap toggle plus an updated tool hint.

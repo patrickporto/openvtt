@@ -1,8 +1,10 @@
 import * as v from 'valibot';
+import { LockableSchemaEntries } from '@openvtt/canvas';
 
 export const TemplateShapeSchema = v.picklist(['circle', 'cone', 'ray']);
 
 export const TemplateDataSchema = v.object({
+  ...LockableSchemaEntries,
   id: v.optional(v.pipe(v.string(), v.uuid())),
   shape: TemplateShapeSchema,
   x: v.number(),
