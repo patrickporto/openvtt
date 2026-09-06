@@ -53,7 +53,6 @@ export class InputsManager {
   private lastMoveTime = 0;
 
   readonly buttons = new Set<number>();
-  readonly keys = new Set<string>();
 
   shiftKey = false;
   altKey = false;
@@ -64,7 +63,6 @@ export class InputsManager {
   isDragging = false;
   isPinching = false;
   isPanning = false;
-  isSpacebarPanning = false;
   isPen = false;
 
   private pinchPrevDist = 0;
@@ -137,13 +135,11 @@ export class InputsManager {
   }
 
   private resetTransient(): void {
-    this.keys.clear();
     this.buttons.clear();
     this.isPointing = false;
     this.isDragging = false;
     this.isPinching = false;
     this.isPanning = false;
-    this.isSpacebarPanning = false;
     this.clearLongPress();
   }
 
@@ -432,18 +428,13 @@ export class InputsManager {
     const target = e.target as HTMLElement | null;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
     if (e.repeat) return;
-    this.keys.add(e.code);
+    this.updateModifiers(e);
     if (!this.deps.isEnabled()) return;
-    if (e.code === 'Space') {
-      this.isSpacebarPanning = true;
-      e.preventDefault();
-    }
     this.deps.dispatch('keydown', this.keyInfo(e));
   }
 
   private handleKeyUp(e: KeyboardEvent): void {
-    this.keys.delete(e.code);
-    if (e.code === 'Space') this.isSpacebarPanning = false;
+    this.updateModifiers(e);
     if (!this.deps.isEnabled()) return;
     this.deps.dispatch('keyup', this.keyInfo(e));
   }

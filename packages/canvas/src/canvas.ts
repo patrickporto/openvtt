@@ -1,6 +1,7 @@
 import { Application, BlurFilter, Container, Graphics } from 'pixi.js';
 import { type EventMeta, type EventPayload } from '@openvtt/events';
-import { CONFIG, type GridConfig } from './config';
+import { createHotkeyManager, type HotkeyManager } from '@openvtt/hotkeys';
+import { CONFIG } from './config';
 import { createCanvasBus, type CanvasBus, type CanvasEventMap } from './bus';
 import { CanvasViewport } from './viewport';
 import { CanvasAnimation, Easing } from './animation';
@@ -35,6 +36,8 @@ export interface CanvasOptions {
   plugins?: CanvasPlugin[];
   /** Se false, desativa o context menu (right-click/long-press). Default true. */
   contextMenu?: boolean;
+  /** Manager de hotkeys compartilhado; se omitido, o canvas cria e gerencia o próprio. */
+  hotkeys?: HotkeyManager;
 }
 
 type AnyPlaceablesLayer = PlaceablesLayer<any, PlaceableObject<any>, any>;
@@ -61,6 +64,7 @@ export class Canvas implements CanvasLike {
   readonly bus: CanvasBus;
   readonly animation: CanvasAnimation;
   readonly stage: Container;
+  readonly hotkeys: HotkeyManager;
 
   readonly documents: DocumentRegistry;
   readonly plugins: PluginManager;
@@ -88,12 +92,16 @@ export class Canvas implements CanvasLike {
   private initialized = false;
   private blurFilter: BlurFilter | null = null;
   private lastToolId = 'select';
+  private readonly ownsHotkeys: boolean;
+  private attachedHotkeys = false;
 
   constructor(container: HTMLElement, options: CanvasOptions = {}) {
     this.container = container;
     this.options = options;
     this.app = new Application();
     this.bus = createCanvasBus();
+    this.hotkeys = options.hotkeys ?? createHotkeyManager({ namespace: 'canvas' });
+    this.ownsHotkeys = !options.hotkeys;
     this.stage = new Container();
     this.stage.label = 'openvtt-canvas';
     this.background = new BackgroundLayer({
@@ -388,6 +396,11 @@ export class Canvas implements CanvasLike {
     });
     this.app.ticker.add(this.tickInputs, this);
 
+    if (!this.hotkeys.isAttached) {
+      this.hotkeys.attach();
+      this.attachedHotkeys = true;
+    }
+
     defineCanvasElements();
     if (this.options.contextMenu !== false) {
       this.contextMenu.attachTo(this.container);
@@ -560,6 +573,9 @@ export class Canvas implements CanvasLike {
     this.plugins.disposeAllSync();
     this.animation.cancelAll();
     this.bus.emit('destroy', {});
+    this.tools?.destroy();
+    if (this.attachedHotkeys) this.hotkeys.detach();
+    if (this.ownsHotkeys) this.hotkeys.destroy();
     if (this.initialized) {
       this.app.destroy({ removeView: true }, { children: true, texture: true, textureSource: true });
     }

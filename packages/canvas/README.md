@@ -132,7 +132,8 @@ Canvas
 |    create(type, data) · update(type, id, changes) · delete(type, id)
 |    get(type, id) · layer(type) · types() · createFromScene(scene)
 ├─ layers: LayerManager            visible/opacity/locked/order, reordenação
-├─ tools: ToolManager              options por tool (defaults dos plugins), hotkeys
+├─ tools: ToolManager              options por tool (defaults dos plugins)
+├─ hotkeys: HotkeyManager          @openvtt/hotkeys — tool:*, undo, redo, ping, pan (rebindáveis)
 ├─ bus: CanvasBus                  eventos + hooks (@openvtt/events)
 ├─ select/clearSelection/selected  seleção genérica sobre o registry
 ├─ isMoveBlocked(from, to)         colisão via hook movement:segments

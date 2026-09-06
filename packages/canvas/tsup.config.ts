@@ -7,5 +7,5 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   treeshake: true,
-  external: ['pixi.js', 'pixi-viewport', 'pixi-filters', 'pixi-filters/outline', 'pixi-filters/glow', 'valibot', 'uuid', 'rbush', '@openvtt/events'],
+  external: ['pixi.js', 'pixi-viewport', 'pixi-filters', 'pixi-filters/outline', 'pixi-filters/glow', 'valibot', 'uuid', 'rbush', '@openvtt/events', '@openvtt/hotkeys'],
 });
