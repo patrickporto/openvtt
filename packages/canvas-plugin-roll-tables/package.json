@@ -1,0 +1,43 @@
+{
+  "name": "@openvtt/canvas-plugin-roll-tables",
+  "version": "0.1.0",
+  "description": "Placeable roll-table anchors for @openvtt/canvas — drop weighted random tables on the map, draw from the context menu, and persist the last result on the document.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@openvtt/canvas": "workspace:*",
+    "@openvtt/roll-tables": "workspace:*",
+    "valibot": "^1.4.2"
+  },
+  "peerDependencies": {
+    "pixi.js": "^8.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "pixi.js": "^8.15.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["openvtt", "canvas", "plugin", "rolltable", "random-tables", "vtt", "tabletop"]
+}
