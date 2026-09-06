@@ -31,6 +31,27 @@ describe('GridRenderer.snapToGrid', () => {
   });
 });
 
+describe('GridRenderer.cellIndexOf / cellCenterOf', () => {
+  it('round-trips snap centers for every grid type', () => {
+    for (const type of ['square', 'hex-vertical', 'hex-horizontal', 'isometric'] as const) {
+      const snapped = GridRenderer.snapToGrid(137, 91, type, 50, 7, 11);
+      const cell = GridRenderer.cellIndexOf(snapped.x, snapped.y, type, 50, 7, 11);
+      expect(GridRenderer.cellCenterOf(cell.col, cell.row, type, 50, 7, 11)).toEqual(snapped);
+    }
+  });
+
+  it('indexes square cells by containment', () => {
+    expect(GridRenderer.cellIndexOf(0, 0, 'square', 50)).toEqual({ col: 0, row: 0 });
+    expect(GridRenderer.cellIndexOf(50, 50, 'square', 50)).toEqual({ col: 1, row: 1 });
+    expect(GridRenderer.cellIndexOf(49, 99, 'square', 50)).toEqual({ col: 0, row: 1 });
+  });
+
+  it('indexes square cells with offsets', () => {
+    expect(GridRenderer.cellIndexOf(12, 12, 'square', 50, 10, 10)).toEqual({ col: 0, row: 0 });
+    expect(GridRenderer.cellIndexOf(60, 60, 'square', 50, 10, 10)).toEqual({ col: 1, row: 1 });
+  });
+});
+
 describe('GridRenderer.getCellShape', () => {
   it('returns null for none', () => {
     expect(GridRenderer.getCellShape(10, 10, 'none', 50)).toBeNull();

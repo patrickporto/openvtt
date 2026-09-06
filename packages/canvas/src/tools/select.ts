@@ -1,6 +1,8 @@
 import { Tool } from './Tool';
 import type { Ticker } from 'pixi.js';
 import { easeTowards } from '../utils';
+import { GridRenderer } from '../grid';
+import { GridPath } from '../gridPath';
 import type { PlaceableObject } from '../placeables/PlaceableObject';
 import type { CanvasPointerInfo, Point } from '../input/types';
 import type { HandleCorner, HandleEntry, HandleInfo } from '../handles/HandlesLayer';
@@ -143,6 +145,7 @@ class SelectDragging extends Tool {
   private easeFn: ((ticker: Ticker) => void) | null = null;
   private primary: PlaceableObject | null = null;
   private measureFrom: Point | null = null;
+  private dragPath: GridPath | null = null;
   private moved = false;
   private committed = false;
 
@@ -161,8 +164,23 @@ class SelectDragging extends Tool {
       this.startPositions.set(obj.id, { x: obj.x, y: obj.y });
     }
     const primaryStart = this.primary ? this.startPositions.get(this.primary.id) : undefined;
-    const wantsRuler = this.primary ? defOf(this.canvas, this.primary)?.behavior?.rulerOnDrag === true : false;
-    this.measureFrom = wantsRuler && primaryStart ? { ...primaryStart } : null;
+    const primaryDef = this.primary ? defOf(this.canvas, this.primary) : undefined;
+    const wantsRuler = primaryDef?.behavior?.rulerOnDrag === true;
+    const grid = this.canvas.grid;
+    this.measureFrom = null;
+    this.dragPath = null;
+    if (wantsRuler && primaryStart) {
+      if (primaryDef?.behavior?.snapToGrid && grid.type !== 'none') {
+        this.dragPath = new GridPath(primaryStart, {
+          type: grid.type,
+          size: grid.size,
+          offsetX: grid.offsetX ?? 0,
+          offsetY: grid.offsetY ?? 0,
+        });
+      } else {
+        this.measureFrom = { ...primaryStart };
+      }
+    }
     this.setCursor('grabbing');
   }
 
@@ -180,14 +198,18 @@ class SelectDragging extends Tool {
     }
 
     let anyEased = false;
+    let primaryTarget: Point | null = null;
+    let primaryBlocked = false;
     for (const obj of this.canvas.selected) {
       const start = this.startPositions.get(obj.id);
       if (!start) continue;
       const nx = start.x + snapDelta.x;
       const ny = start.y + snapDelta.y;
       if (defOf(this.canvas, obj)?.behavior?.collides && this.canvas.isMoveBlocked({ x: obj.x, y: obj.y }, { x: nx, y: ny })) {
+        if (obj === this.primary) primaryBlocked = true;
         continue;
       }
+      if (obj === this.primary) primaryTarget = { x: nx, y: ny };
       if (easedDragOf(this.canvas, obj)) {
         this.easeTargets.set(obj.id, { x: nx, y: ny });
         anyEased = true;
@@ -198,13 +220,36 @@ class SelectDragging extends Tool {
       this.canvas.reindex(obj);
     }
     if (anyEased) this.startEaseTicker();
-    if (this.measureFrom && this.primary) {
+    if (this.dragPath && primaryTarget && !primaryBlocked) {
+      if (this.dragPath.extend(primaryTarget)) this.renderDragPath();
+    } else if (this.measureFrom && this.primary) {
       const units = Math.hypot(this.primary.x - this.measureFrom.x, this.primary.y - this.measureFrom.y) / this.canvas.grid.size;
       this.preview.clear();
       this.preview.ruler(this.measureFrom.x, this.measureFrom.y, this.primary.x, this.primary.y, `${units.toFixed(1)} u`);
     }
     this.canvas.handles.refresh();
     this.canvas.bus.call('scene:refresh', {});
+  }
+
+  private renderDragPath(): void {
+    const path = this.dragPath;
+    if (!path) return;
+    const grid = this.canvas.grid;
+    this.preview.clear();
+    for (const cell of path.cellPoints) {
+      const shape = GridRenderer.getCellShape(
+        cell.x,
+        cell.y,
+        grid.type,
+        grid.size,
+        grid.offsetX ?? 0,
+        grid.offsetY ?? 0,
+      );
+      if (shape) this.preview.ghostCell(shape);
+    }
+    this.preview.ghostPolyline(path.waypointPoints);
+    const end = path.endPoint;
+    this.preview.showLabel(`${path.units.toFixed(1)} u`, end.x + 12, end.y - 24);
   }
 
   private startEaseTicker(): void {

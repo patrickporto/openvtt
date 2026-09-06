@@ -21,8 +21,8 @@ export interface CellIndex {
 const GRID_KEYS = ['type', 'size', 'color', 'alpha', 'lineWidth', 'offsetX', 'offsetY'] as const;
 
 /**
- * Estado do grid como servi├ºo do core: plugins leem `canvas.grid` para
- * convers├╡es c├⌐lula/pixel e snapping; a renderiza├º├úo do grid ├⌐ contribu├¡da
+ * Estado do grid como serviço do core: plugins leem `canvas.grid` para
+ * conversões célula/pixel e snapping; a renderização do grid é contribuída
  * pelo plugin `@openvtt/canvas-plugin-grid`, que observa `grid:change`.
  */
 export class GridService implements GridConfig {
@@ -302,6 +302,72 @@ export class GridRenderer {
     return this.snapToGrid(x, y, type, size, offsetX, offsetY);
   }
 
+  static cellIndexOf(
+    x: number,
+    y: number,
+    type: GridType,
+    size: number,
+    offsetX = 0,
+    offsetY = 0,
+  ): CellIndex {
+    switch (type) {
+      case 'square':
+        return { col: Math.floor((x - offsetX) / size), row: Math.floor((y - offsetY) / size) };
+      case 'hex-vertical': {
+        const hexWidth = (Math.sqrt(3) / 2) * size;
+        const row = Math.round((y - offsetY) / (size * 0.75));
+        const hexOffset = Math.abs(row) % 2 === 1 ? hexWidth / 2 : 0;
+        return { col: Math.round((x - offsetX - hexOffset) / hexWidth), row };
+      }
+      case 'hex-horizontal': {
+        const hexHeight = (Math.sqrt(3) / 2) * size;
+        const col = Math.round((x - offsetX) / (size * 0.75));
+        const hexOffsetY = Math.abs(col) % 2 === 1 ? hexHeight / 2 : 0;
+        return { col, row: Math.round((y - offsetY - hexOffsetY) / hexHeight) };
+      }
+      case 'isometric': {
+        const isoWidth = size;
+        const isoHeight = size / 2;
+        const ax = x - offsetX;
+        const ay = y - offsetY;
+        return {
+          col: Math.round(ax / isoWidth + ay / isoHeight),
+          row: Math.round(ay / isoHeight - ax / isoWidth),
+        };
+      }
+      default:
+        return { col: Math.round(x), row: Math.round(y) };
+    }
+  }
+
+  static cellCenterOf(
+    col: number,
+    row: number,
+    type: GridType,
+    size: number,
+    offsetX = 0,
+    offsetY = 0,
+  ): { x: number; y: number } {
+    switch (type) {
+      case 'square':
+        return { x: col * size + size / 2 + offsetX, y: row * size + size / 2 + offsetY };
+      case 'hex-vertical': {
+        const hexWidth = (Math.sqrt(3) / 2) * size;
+        const hexOffset = Math.abs(row) % 2 === 1 ? hexWidth / 2 : 0;
+        return { x: col * hexWidth + hexOffset + offsetX, y: row * size * 0.75 + offsetY };
+      }
+      case 'hex-horizontal': {
+        const hexHeight = (Math.sqrt(3) / 2) * size;
+        const hexOffsetY = Math.abs(col) % 2 === 1 ? hexHeight / 2 : 0;
+        return { x: col * size * 0.75 + offsetX, y: row * hexHeight + hexOffsetY + offsetY };
+      }
+      case 'isometric':
+        return { x: ((col - row) * size) / 2 + offsetX, y: ((col + row) * (size / 2)) / 2 + offsetY };
+      default:
+        return { x: col, y: row };
+    }
+  }
+
   static getCellShape(
     x: number,
     y: number,
@@ -328,21 +394,22 @@ export class GridRenderer {
       return { type: 'poly', data: points };
     }
     if (type === 'isometric') {
-      const isoWidth = size;
-      const isoHeight = size / 2;
-      const ax = x - offsetX;
-      const ay = y - offsetY;
-      const isoX = ax / isoWidth + ay / isoHeight;
-      const isoY = ay / isoHeight - ax / isoWidth;
-      const tileX = Math.floor(isoX);
-      const tileY = Math.floor(isoY);
-      const cenIsoX = tileX + 0.5;
-      const cenIsoY = tileY + 0.5;
-      const cx = ((cenIsoX - cenIsoY) * isoWidth) / 2 + offsetX;
-      const cy = ((cenIsoX + cenIsoY) * isoHeight) / 2 + offsetY;
+      const cell = this.cellIndexOf(x, y, type, size, offsetX, offsetY);
+      const center = this.cellCenterOf(cell.col, cell.row, type, size, offsetX, offsetY);
+      const halfWidth = size / 2;
+      const halfHeight = size / 4;
       return {
         type: 'poly',
-        data: [cx, cy - isoHeight / 2, cx + isoWidth / 2, cy, cx, cy + isoHeight / 2, cx - isoWidth / 2, cy],
+        data: [
+          center.x,
+          center.y - halfHeight,
+          center.x + halfWidth,
+          center.y,
+          center.x,
+          center.y + halfHeight,
+          center.x - halfWidth,
+          center.y,
+        ],
       };
     }
     return null;

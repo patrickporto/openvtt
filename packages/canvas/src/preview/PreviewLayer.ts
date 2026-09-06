@@ -1,7 +1,10 @@
 import { Graphics, Text } from 'pixi.js';
 import { CanvasLayer, type CanvasLayerOptions } from '../layers/CanvasLayer';
 import { CONFIG } from '../config';
+import type { CellShape } from '../grid';
 import type { Canvas } from '../canvas';
+
+const RULER_COLOR = 0x4fc3f7;
 
 /**
  * Camada de overlays transitórios (fantasmas de posicionamento, marquee de
@@ -89,7 +92,18 @@ export class PreviewLayer extends CanvasLayer {
     this.graphics.poly(flat).stroke({ color, width: 2, alpha: 0.8 });
   }
 
-  ghostPolyline(points: { x: number; y: number }[], color = 0x4fc3f7): void {
+  ghostCell(shape: CellShape, color = RULER_COLOR): void {
+    if (shape.type === 'rect') {
+      const [x, y, width, height] = shape.data;
+      this.graphics.rect(x, y, width, height).fill({ color, alpha: 0.12 });
+      this.graphics.rect(x, y, width, height).stroke({ color, width: 1.5, alpha: 0.55 });
+      return;
+    }
+    this.graphics.poly(shape.data).fill({ color, alpha: 0.12 });
+    this.graphics.poly(shape.data).stroke({ color, width: 1.5, alpha: 0.55 });
+  }
+
+  ghostPolyline(points: { x: number; y: number }[], color = RULER_COLOR): void {
     if (points.length < 2) return;
     this.graphics.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) this.graphics.lineTo(points[i].x, points[i].y);
@@ -98,7 +112,7 @@ export class PreviewLayer extends CanvasLayer {
   }
 
   ruler(x1: number, y1: number, x2: number, y2: number, text: string): void {
-    const color = 0x4fc3f7;
+    const color = RULER_COLOR;
     this.graphics.moveTo(x1, y1).lineTo(x2, y2).stroke({ color, width: 2, alpha: 0.95 });
     this.graphics.circle(x1, y1, 4).fill({ color });
     this.graphics.circle(x2, y2, 4).fill({ color });
