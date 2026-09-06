@@ -3,6 +3,14 @@ import * as v from 'valibot';
 import { createBus, defineContract, EventValidationError } from '../src';
 
 describe('notify events', () => {
+  it('createBus with only a namespace defaults events and hooks', () => {
+    const bus = createBus({ namespace: 'solo' });
+    expect(bus.namespace).toBe('solo');
+    expect(bus.eventNames()).toEqual([]);
+    expect(bus.hookNames()).toEqual([]);
+    expect(() => bus.emit('e' as never, {})).not.toThrow();
+  });
+
   it('delivers payloads to on() handlers and returns meta with uuid v7', () => {
     const bus = createBus();
     const received: Array<{ payload: unknown; id: string }> = [];

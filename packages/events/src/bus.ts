@@ -420,7 +420,13 @@ export class EventBus<E extends EventMap = EventMap, H extends HookMap = HookMap
 function normalizeContract<E extends EventMap, H extends HookMap>(
   contract: ContractDef<E, H> | Contract<E, H>,
 ): Contract<E, H> {
-  if (contract && typeof contract === 'object' && 'namespace' in contract) {
+  if (
+    contract &&
+    typeof contract === 'object' &&
+    'namespace' in contract &&
+    'events' in contract &&
+    'hooks' in contract
+  ) {
     return contract as Contract<E, H>;
   }
   return defineContract(contract as ContractDef<E, H>);
