@@ -1,12 +1,15 @@
 import './style.css';
+import { hotkeys } from './hotkeys';
 import { renderDice } from './pages/dice';
 import { renderCanvas } from './pages/canvas';
 import { renderNotation } from './pages/notation';
+import { renderAudio } from './pages/audio';
 import { renderSheet } from './pages/sheet';
 import { renderDocs } from './pages/docs';
 import { renderHome } from './pages/home';
+import { renderHotkeys } from './pages/hotkeys';
 
-type PageId = 'home' | 'dice' | 'canvas' | 'notation' | 'sheet' | 'docs';
+type PageId = 'home' | 'dice' | 'canvas' | 'notation' | 'audio' | 'sheet' | 'docs' | 'hotkeys';
 
 const ICONS = {
   sigil: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 2 21 8v8l-9 6-9-6V8l9-6Z"/><path d="M12 2v20M3 8l18 8M21 8 3 16" opacity=".45"/></svg>`,
@@ -14,15 +17,19 @@ const ICONS = {
   dice: `<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 2.5 20.5 7.4v9.2L12 21.5 3.5 16.6V7.4L12 2.5Z"/><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="6.4" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="17.6" r="1.1" fill="currentColor" stroke="none"/></svg>`,
   map: `<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M3.5 9.2h17M9.2 3.5v17" opacity=".5"/><circle cx="14.4" cy="14.4" r="2.4" fill="currentColor" stroke="none" opacity=".85"/></svg>`,
   notation: `<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 7 4 5-4 5M11 17h8"/><path d="M13 7h6" opacity=".55"/></svg>`,
+  audio: `<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6.8 9H3.5v6h3.3L11 19V5Z"/><path d="M14.8 9.2a4.2 4.2 0 0 1 0 5.6M17.6 6.6a8 8 0 0 1 0 10.8" opacity=".65"/></svg>`,
   sheet: `<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="3" width="15" height="18" rx="2"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4" opacity=".6"/></svg>`,
   book: `<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>`,
+  keyboard: `<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01" stroke-linecap="round"/><path d="M8 15.5h8" stroke-linecap="round"/></svg>`,
 };
 
 const PAGES: { id: PageId; label: string; icon: string; render: (root: HTMLElement) => () => void }[] = [
   { id: 'home', label: 'Home', icon: ICONS.home, render: renderHome },
   { id: 'dice', label: 'Dice Lab', icon: ICONS.dice, render: renderDice },
   { id: 'canvas', label: 'Scene Canvas', icon: ICONS.map, render: renderCanvas },
+  { id: 'hotkeys', label: 'Hotkeys Lab', icon: ICONS.keyboard, render: renderHotkeys },
   { id: 'notation', label: 'Notation Lab', icon: ICONS.notation, render: renderNotation },
+  { id: 'audio', label: 'Audio Lab', icon: ICONS.audio, render: renderAudio },
   { id: 'sheet', label: 'Sheet Lab', icon: ICONS.sheet, render: renderSheet },
   { id: 'docs', label: 'Wiki & Docs', icon: ICONS.book, render: renderDocs },
 ];
@@ -72,6 +79,8 @@ function render(): void {
   const page = PAGES.find((p) => p.id === id)!;
   cleanup = page.render(pageEl);
 }
+
+hotkeys.attach();
 
 window.addEventListener('hashchange', render);
 render();

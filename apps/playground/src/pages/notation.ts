@@ -1,4 +1,5 @@
 import { evaluateRoll, type DieRoll, type RollExpr } from '@openvtt/dice-core';
+import { hotkeys } from '../hotkeys';
 import { fromFormula as parseCanonical, toFormula as printCanonical } from '@openvtt/dice-notation';
 import { fromFormula as parseFoundry, toFormula as printFoundry } from '@openvtt/dice-foundry-notation';
 import { fromFormula as parseRoll20, toFormula as printRoll20 } from '@openvtt/dice-roll20-notation';
@@ -214,17 +215,22 @@ export function renderNotation(root: HTMLElement): () => void {
 
   runButton.addEventListener('click', run);
 
-  const onKey = (event: KeyboardEvent) => {
-    if (event.key === 'Enter' && (document.activeElement === notationInput || document.activeElement === seedInput)) {
+  hotkeys.register('playground', 'notation:run', {
+    name: 'Run notation',
+    binds: ['Enter'],
+    allowInInputs: true,
+    onDown: () => {
+      const active = document.activeElement;
+      if (active !== notationInput && active !== seedInput) return;
       run();
-    }
-  };
-  document.addEventListener('keydown', onKey);
+      return true;
+    },
+  });
 
   syncDialectUI();
   run();
 
   return () => {
-    document.removeEventListener('keydown', onKey);
+    hotkeys.unregister('playground');
   };
 }

@@ -29,12 +29,12 @@ afterAll(() => {
 });
 
 describe('plugin composition', () => {
-  it('installs all 10 preset plugins', () => {
-    expect(canvas.plugins.list().length).toBe(10);
+  it('installs all 19 preset plugins', () => {
+    expect(canvas.plugins.list().length).toBe(19);
   });
 
   it('registers every document type', () => {
-    expect(canvas.documents.types().sort()).toEqual(['drawing', 'light', 'template', 'tile', 'token', 'wall']);
+    expect(canvas.documents.types().sort()).toEqual(['drawing', 'light', 'map', 'ring', 'template', 'tile', 'token', 'wall']);
   });
 });
 
@@ -69,6 +69,33 @@ describe('capability hooks between plugins', () => {
     expect(canvas.isMoveBlocked({ x: 450, y: 100 }, { x: 450, y: 300 })).toBe(false);
   });
 
+  it('dragging a wall point commits the new geometry and is undoable', async () => {
+    const { HistoryManager } = await import('@openvtt/canvas');
+    if (!canvas.history) {
+      (canvas as unknown as { history: HistoryManager }).history = new HistoryManager(canvas);
+    }
+    const wall = (await canvas.documents.create('wall', {
+      segments: [{ x1: 0, y1: 0, x2: 300, y2: 0 }],
+    })) as Wall;
+    const drag = (phase: 'start' | 'move' | 'end', x: number, y: number) =>
+      canvas.bus.call('handle:drag', {
+        handle: { type: 'wall-point', data: { wallId: wall.id, segmentIndex: 0, role: 'p2' } },
+        x,
+        y,
+        phase,
+        handled: false,
+      });
+    drag('start', 300, 0);
+    drag('move', 420, 90);
+    drag('end', 420, 90);
+    expect(wall.segments[0].x2).toBe(420);
+    expect(wall.segments[0].y2).toBe(90);
+    await canvas.history.undo();
+    expect(wall.segments[0].x2).toBe(300);
+    expect(wall.segments[0].y2).toBe(0);
+    canvas.documents.delete('wall', wall.id);
+  });
+
   it('tokens feed vision and light sources (pixels, grid-scaled)', async () => {
     await canvas.documents.create('token', { x: 200, y: 200, visionRadius: 6, lightDim: 3 });
     const vision = canvas.bus.call('vision:sources', { sources: [] });
@@ -88,6 +115,7 @@ describe('scene loading', () => {
     await canvas.documents.createFromScene({
       width: 1600,
       height: 1000,
+      maps: [{ x: 0, y: 0, source: 'maps/broken.png' }],
       tokens: [{ x: 100, y: 100, label: 'A' }],
       walls: [{ segments: [{ x1: 0, y1: 50, x2: 500, y2: 50 }] }],
       documents: { light: [{ x: 300, y: 300, dim: 5 }] },
@@ -95,6 +123,21 @@ describe('scene loading', () => {
     expect(canvas.documents.layer('token')!.placeables.length).toBe(1);
     expect(canvas.documents.layer('wall')!.placeables.length).toBe(1);
     expect(canvas.documents.layer('light')!.placeables.length).toBe(1);
+  });
+
+  it('hydrates maps from the scene and surfaces map events', async () => {
+    expect(canvas.documents.layer('map')!.placeables.length).toBe(1);
+    const seen: string[] = [];
+    const unsub = canvas.bus.onAny((name) => {
+      if (name.startsWith('map:')) seen.push(name);
+    });
+    const map = await canvas.documents.create('map', { x: 0, y: 0, width: 10, height: 10, source: 'maps/does-not-exist.png' });
+    for (let i = 0; i < 50 && seen.length === 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    unsub();
+    expect(seen).toContain('map:error');
+    canvas.documents.delete('map', map.id);
   });
 
   it('selection resolves across document types and draws handles', () => {
@@ -202,11 +245,54 @@ describe('image editor', () => {
   });
 });
 
+describe('windows', () => {
+  it('double-click opens the image editor as a managed window (headless)', async () => {
+    const { WindowsPlugin } = await import('@openvtt/canvas-preset-standard');
+    const windows = canvas.plugins.get<WindowsPlugin>('windows')!;
+    windows.manager.get('imageEditor')?.close();
+    const before = windows.manager.list().length;
+    const token = await canvas.documents.create('token', { x: 900, y: 900, label: 'Win' });
+    const result = canvas.bus.call('select:doubleclick', { x: token.x, y: token.y, handled: false });
+    expect(result.handled).toBe(true);
+    expect(windows.manager.list().length).toBe(before + 1);
+    const handle = windows.manager.get('imageEditor');
+    expect(handle).not.toBeNull();
+    expect(handle!.definitionId).toBe('imageEditor');
+    expect(handle!.state).toBe('normal');
+    expect(handle!.element).toBeNull();
+    handle!.close();
+    expect(windows.manager.list().length).toBe(before);
+    canvas.documents.delete('token', token.id);
+  });
+
+  it('fog registers its panel window when windows is installed first', async () => {
+    const { WindowsPlugin } = await import('@openvtt/canvas-preset-standard');
+    const windows = canvas.plugins.get<WindowsPlugin>('windows')!;
+    const handle = windows.manager.open('fog');
+    expect(handle).not.toBeNull();
+    expect(handle!.definitionId).toBe('fog');
+    expect(handle!.state).toBe('normal');
+    handle!.close();
+  });
+
+  it('fog works without the windows plugin (no panel registration)', async () => {
+    const { Canvas: CanvasCtor } = await import('@openvtt/canvas');
+    const { fogPlugin } = await import('@openvtt/canvas-plugin-fog');
+    const bare = new CanvasCtor({} as HTMLElement);
+    await bare.use(fogPlugin);
+    expect(bare.plugins.has('fog')).toBe(true);
+    expect(bare.plugins.has('windows')).toBe(false);
+    bare.destroy();
+  });
+});
+
 describe('image editor decoupling', () => {
   it('installs and works without the tokens plugin', async () => {
     const { Canvas: CanvasCtor } = await import('@openvtt/canvas');
+    const { windowsPlugin } = await import('@openvtt/canvas-preset-standard');
     const { imageEditorPlugin } = await import('@openvtt/canvas-plugin-image-editor');
     const bare = new CanvasCtor({} as HTMLElement);
+    await bare.use(windowsPlugin);
     await bare.use(imageEditorPlugin);
     expect(bare.plugins.has('imageEditor')).toBe(true);
     expect(bare.documents.types()).toEqual([]);
@@ -220,6 +306,7 @@ describe('image editor decoupling', () => {
 
   it('a custom document type becomes editable by declaring imageField', async () => {
     const { Canvas: CanvasCtor, PlaceableObject, definePlugin } = await import('@openvtt/canvas');
+    const { windowsPlugin } = await import('@openvtt/canvas-preset-standard');
     const { imageEditorPlugin } = await import('@openvtt/canvas-plugin-image-editor');
     class Portrait extends PlaceableObject<{ x: number; y: number; art?: string }> {
       readonly objectType = 'portrait';
@@ -238,6 +325,7 @@ describe('image editor decoupling', () => {
       },
     });
     const bare = new CanvasCtor({} as HTMLElement);
+    await bare.use(windowsPlugin);
     await bare.use(imageEditorPlugin);
     await bare.use(portraitsPlugin);
     expect(bare.documents.imageFieldOf('portrait')).toBe('art');

@@ -1,4 +1,5 @@
 import { DiceBox, RollCancelledError, listThemes, type RollResult } from '@openvtt/dice';
+import { hotkeys } from '../hotkeys';
 
 const ICONS = {
   gear: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.65 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09c0 .68.4 1.3 1.03 1.56a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87c.26.63.88 1.03 1.56 1.03H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg>`,
@@ -151,21 +152,30 @@ export function renderDice(root: HTMLElement): () => void {
     setStatus('error', 'error — see console');
   });
 
-  const onKey = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
+  hotkeys.register('playground', 'dice:escape', {
+    name: 'Clear dice selection',
+    binds: ['Escape'],
+    allowInInputs: true,
+    onDown: () => {
       if (document.activeElement === notationInput) {
         notationInput.blur();
-        return;
+        return true;
       }
       diceBox.clearSelection();
       selectedDie = null;
       setStatus('ready', 'ready');
-    }
-    if (event.key.toLowerCase() === 'r' && selectedDie !== null && !rolling && document.activeElement !== notationInput) {
+      return true;
+    },
+  });
+  hotkeys.register('playground', 'dice:reroll', {
+    name: 'Reroll selected die',
+    binds: ['KeyR'],
+    onDown: () => {
+      if (selectedDie === null || rolling || document.activeElement === notationInput) return;
       rerollSelected();
-    }
-  };
-  document.addEventListener('keydown', onKey);
+      return true;
+    },
+  });
 
   const onOutsideClick = (event: MouseEvent) => {
     if (!settingsPanel.contains(event.target as Node) && event.target !== settingsBtn && !settingsBtn.contains(event.target as Node)) {
@@ -286,7 +296,7 @@ export function renderDice(root: HTMLElement): () => void {
 
   return () => {
     disposed = true;
-    document.removeEventListener('keydown', onKey);
+    hotkeys.unregister('playground');
     document.removeEventListener('click', onOutsideClick);
     void cleanupInit;
     try {

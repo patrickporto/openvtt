@@ -1,5 +1,6 @@
 import hljs from 'highlight.js/lib/common';
 import { marked } from 'marked';
+import { hotkeys } from '../hotkeys';
 
 type Doc = { id: string; title: string; body: string };
 type TocItem = { slug: string; text: string; level: number };
@@ -378,27 +379,33 @@ export function renderDocs(root: HTMLElement): () => void {
 
   searchInput.addEventListener('input', () => renderResults(searchInput.value));
 
-  const onKeydown = (event: KeyboardEvent): void => {
-    const typing = document.activeElement instanceof HTMLInputElement
-      || document.activeElement instanceof HTMLTextAreaElement;
-    if (event.key === '/' && !typing) {
-      event.preventDefault();
+  scrollerEl.addEventListener('scroll', spy, { passive: true });
+
+  hotkeys.register('playground', 'docs:search', {
+    name: 'Focus docs search',
+    binds: ['Slash'],
+    onDown: () => {
       searchInput.focus();
-    }
-    if (event.key === 'Escape' && document.activeElement === searchInput) {
+      return true;
+    },
+  });
+  hotkeys.register('playground', 'docs:clear-search', {
+    name: 'Clear docs search',
+    binds: ['Escape'],
+    allowInInputs: true,
+    onDown: () => {
+      if (document.activeElement !== searchInput) return;
       searchInput.value = '';
       renderResults('');
       searchInput.blur();
-    }
-  };
-
-  scrollerEl.addEventListener('scroll', spy, { passive: true });
-  window.addEventListener('keydown', onKeydown);
+      return true;
+    },
+  });
 
   render();
 
   return () => {
-    window.removeEventListener('keydown', onKeydown);
+    hotkeys.unregister('playground');
     if (raf) cancelAnimationFrame(raf);
   };
 }
