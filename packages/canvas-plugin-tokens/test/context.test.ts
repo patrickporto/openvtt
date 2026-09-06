@@ -1,7 +1,4 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { GlobalRegistrator } from '@happy-dom/global-registrator';
-
-GlobalRegistrator.register();
 
 type Canvas = import('@openvtt/canvas').Canvas;
 type HistoryManager = import('@openvtt/canvas').HistoryManager;
