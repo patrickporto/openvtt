@@ -16,8 +16,8 @@ function separator(id: string): ContextMenuItem {
   return { type: 'separator', id };
 }
 
-function fakeObject(id: string): any {
-  return { id, objectType: 'token' };
+function fakeObject(id: string, isLocked = false): any {
+  return { id, objectType: 'token', isLocked };
 }
 
 function fakeCanvas(): {
@@ -25,27 +25,36 @@ function fakeCanvas(): {
   bus: ReturnType<typeof createCanvasBus>;
   manager: ContextMenuManager;
   selectCalls: Array<{ id: string; additive: boolean }>;
+  lockCalls: Array<{ ids: string[]; locked: boolean }>;
+  pickResult: { current: any };
 } {
   const bus = createCanvasBus();
   const selection = new Set<string>();
   const selected: any[] = [];
   const selectCalls: Array<{ id: string; additive: boolean }> = [];
+  const lockCalls: Array<{ ids: string[]; locked: boolean }> = [];
+  const pickResult = { current: undefined as any };
   const canvas = {
     bus,
     selection,
     selected,
     grid: { size: 50 },
+    pick: () => pickResult.current,
     select: (obj: any, additive?: boolean) => {
       selectCalls.push({ id: obj.id, additive: additive ?? false });
       selection.add(obj.id);
       selected.push(obj);
+    },
+    setLocked: (targets: any, locked: boolean) => {
+      const list = Array.isArray(targets) ? targets : [targets];
+      lockCalls.push({ ids: list.map((t: any) => t.id), locked });
     },
     deleteSelected: () => {},
     documents: { create: () => Promise.resolve({}) },
   } as unknown as Canvas;
   const manager = new ContextMenuManager(canvas);
   (canvas as unknown as { contextMenu: ContextMenuManager }).contextMenu = manager;
-  return { canvas, bus, manager, selectCalls };
+  return { canvas, bus, manager, selectCalls, lockCalls, pickResult };
 }
 
 function pointer(target: PointerTarget): CanvasPointerInfo {
@@ -239,15 +248,48 @@ describe('ContextMenuManager', () => {
     expect(manager.collect(menuCtx()).map((item) => item.id)).toEqual(['hooked']);
   });
 
-  it('appends core duplicate/delete only with a non-empty selection', () => {
+  it('appends core lock/duplicate/delete only with a non-empty selection', () => {
     const { manager } = fakeCanvas();
     manager.register({ id: 'c', items: [action('mine')] });
     expect(manager.collect(menuCtx()).map((item) => item.id)).toEqual(['mine']);
     expect(manager.collect(menuCtx({ selection: [fakeObject('t1')] })).map((item) => item.id)).toEqual([
       'mine',
+      'core:lock',
       'core:duplicate',
       'core:delete',
     ]);
+  });
+
+  it('offers Unlock for locked selections and both items for mixed ones', () => {
+    const { manager } = fakeCanvas();
+    const lockedOnly = manager.collect(menuCtx({ selection: [fakeObject('t1', true)] }));
+    expect(lockedOnly.map((item) => item.id)).toEqual(['core:unlock', 'core:duplicate', 'core:delete']);
+    expect(lockedOnly.find((item) => item.id === 'core:delete')?.disabled).toBe(true);
+
+    const mixed = manager.collect(menuCtx({ selection: [fakeObject('t1'), fakeObject('t2', true)] }));
+    expect(mixed.map((item) => item.id)).toEqual(['core:lock', 'core:unlock', 'core:duplicate', 'core:delete']);
+  });
+
+  it('Lock/Unlock items call canvas.setLocked with the matching subset', () => {
+    const { manager, lockCalls } = fakeCanvas();
+    const selection = [fakeObject('t1'), fakeObject('t2', true)];
+    const items = manager.collect(menuCtx({ selection }));
+    (items.find((item) => item.id === 'core:lock') as ContextMenuAction).onClick?.(menuCtx());
+    expect(lockCalls).toEqual([{ ids: ['t1'], locked: true }]);
+    (items.find((item) => item.id === 'core:unlock') as ContextMenuAction).onClick?.(menuCtx());
+    expect(lockCalls[1]).toEqual({ ids: ['t2'], locked: false });
+  });
+
+  it('right-click on empty canvas re-picks locked objects and selects them', () => {
+    const { bus, manager, selectCalls, pickResult } = fakeCanvas();
+    const lockedToken = fakeObject('t9', true);
+    pickResult.current = lockedToken;
+    const opens: any[] = [];
+    bus.on('contextmenu:open', (payload) => opens.push(payload));
+    manager.openFromPointer(pointer({ type: 'canvas' }));
+    expect(selectCalls).toEqual([{ id: 't9', additive: false }]);
+    expect(opens).toHaveLength(1);
+    expect(opens[0].target).toEqual({ type: 'object', objectType: 'token', id: 't9' });
   });
 
   it('a contextmenu:before veto suppresses the open event', () => {

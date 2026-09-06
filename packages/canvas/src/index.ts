@@ -138,7 +138,7 @@ export type { AnimationOptions } from './animation';
 export { CONFIG, configure } from './config';
 export type { CanvasConfig, GridConfig, GridType } from './config';
 
-export { GridTypeSchema, GridSchema, SceneDataSchema, parseScene } from './schemas';
+export { GridTypeSchema, GridSchema, SceneDataSchema, LockableSchemaEntries, parseScene } from './schemas';
 export type { SceneData, GridData, SceneDataInput } from './schemas';
 
 export { createCanvasBus, dynamicBus } from './bus';

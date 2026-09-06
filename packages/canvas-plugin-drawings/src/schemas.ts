@@ -1,9 +1,11 @@
 import * as v from 'valibot';
+import { LockableSchemaEntries } from '@openvtt/canvas';
 
 export const DrawingTypeSchema = v.picklist(['rect', 'ellipse', 'polygon', 'brush', 'text']);
 export type DrawingType = v.InferOutput<typeof DrawingTypeSchema>;
 
 export const DrawingDataSchema = v.object({
+  ...LockableSchemaEntries,
   id: v.optional(v.pipe(v.string(), v.uuid())),
   type: DrawingTypeSchema,
   x: v.number(),

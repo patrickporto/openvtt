@@ -63,6 +63,11 @@ export abstract class PlaceableObject<D = Record<string, unknown>> extends Conta
     return this.options.interactive !== false;
   }
 
+  /** Trancado: não-interativo nas tools (sem pick, drag, resize, rotação nem delete). */
+  get isLocked(): boolean {
+    return (this.document as { locked?: boolean }).locked === true;
+  }
+
   get x(): number {
     return this.position.x;
   }

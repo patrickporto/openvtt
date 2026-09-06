@@ -36,6 +36,15 @@ export const SceneDataSchema = v.looseObject({
   documents: v.optional(v.record(v.string(), v.array(v.unknown()))),
 });
 
+/**
+ * Entradas de schema do campo `locked`, owned pelo core: espalhar nos
+ * schemas de documento dos plugins (`v.object({ ...LockableSchemaEntries, ... })`)
+ * para que o flag sobreviva ao parse de create() e aos eventos `<type>:*`.
+ */
+export const LockableSchemaEntries = {
+  locked: v.optional(v.boolean(), false),
+} as const;
+
 export type SceneData = v.InferOutput<typeof SceneDataSchema>;
 export type GridData = v.InferOutput<typeof GridSchema>;
 

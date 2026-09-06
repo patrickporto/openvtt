@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { LockableSchemaEntries } from '@openvtt/canvas';
 
 export const WallCurveSchema = v.picklist(['linear', 'quadratic', 'cubic']);
 
@@ -22,6 +23,7 @@ export const WallSegmentSchema = v.object({
 });
 
 export const WallDataSchema = v.object({
+  ...LockableSchemaEntries,
   id: v.optional(v.pipe(v.string(), v.uuid())),
   segments: v.array(WallSegmentSchema),
 });

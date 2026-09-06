@@ -210,22 +210,22 @@ export class Canvas implements CanvasLike {
     return this.documents.layersTopDown();
   }
 
-  pick(point: Point): PlaceableObject | undefined {
+  pick(point: Point, options?: { includeLocked?: boolean }): PlaceableObject | undefined {
     for (const layer of this.placeableLayers()) {
       if (!this.layers.isInteractive(layer)) continue;
       const obj = layer.pick(point);
-      if (obj && obj.isSelectable) return obj;
+      if (obj && obj.isSelectable && (options?.includeLocked || !obj.isLocked)) return obj;
     }
     return undefined;
   }
 
-  pickRect(rect: { x: number; y: number; width: number; height: number }): PlaceableObject[] {
+  pickRect(rect: { x: number; y: number; width: number; height: number }, options?: { includeLocked?: boolean }): PlaceableObject[] {
     const seen = new Set<string>();
     const result: PlaceableObject[] = [];
     for (const layer of this.placeableLayers()) {
       if (!this.layers.isInteractive(layer)) continue;
       for (const obj of layer.pickRect(rect)) {
-        if (!seen.has(obj.id) && obj.isSelectable) {
+        if (!seen.has(obj.id) && obj.isSelectable && (options?.includeLocked || !obj.isLocked)) {
           seen.add(obj.id);
           result.push(obj);
         }
@@ -254,6 +254,7 @@ export class Canvas implements CanvasLike {
   }
 
   deleteObject(obj: PlaceableObject): boolean {
+    if (obj.isLocked) return false;
     this._selection.delete(obj.id);
     const deleted = this.documents.delete(obj.objectType, obj.id);
     this.refreshSelection();
@@ -263,6 +264,43 @@ export class Canvas implements CanvasLike {
   deleteSelected(): void {
     for (const obj of this.selected) this.deleteObject(obj);
     this.clearSelection();
+  }
+
+  /* ------------------------------- lock ------------------------------- */
+
+  /**
+   * Tranca/destranca placeables (aceita objetos ou ids). Gravado no
+   * documento via layer.update — undoable e propagado por `document:update`.
+   * Ao trancar, o objeto sai da seleção.
+   */
+  setLocked(targets: PlaceableObject | string | Array<PlaceableObject | string>, locked: boolean): void {
+    const list = Array.isArray(targets) ? targets : [targets];
+    const objects: PlaceableObject[] = [];
+    for (const target of list) {
+      const obj = typeof target === 'string' ? this.documents.findAny(target) : target;
+      if (obj && obj.isLocked !== locked) objects.push(obj);
+    }
+    if (objects.length === 0) return;
+    this.history?.beginBatch();
+    for (const obj of objects) {
+      this.documents.update(obj.objectType, obj.id, { locked });
+      if (locked) this._selection.delete(obj.id);
+    }
+    this.history?.endBatch();
+    this.refreshSelection();
+    this.bus.call('scene:refresh', {});
+  }
+
+  /** Alterna o lock da seleção; sem seleção, do objeto sob o cursor (inclui locked). */
+  toggleLock(): void {
+    let targets = this.selected;
+    if (targets.length === 0) {
+      const point = this.inputs?.getCurrentWorldPoint();
+      const hit = point ? this.pick(point, { includeLocked: true }) : undefined;
+      targets = hit ? [hit] : [];
+    }
+    if (targets.length === 0) return;
+    this.setLocked(targets, targets.some((obj) => !obj.isLocked));
   }
 
   /* --------------------------- movimento --------------------------- */

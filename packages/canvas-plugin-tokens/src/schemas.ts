@@ -1,6 +1,8 @@
 import * as v from 'valibot';
+import { LockableSchemaEntries } from '@openvtt/canvas';
 
 export const TokenDataSchema = v.object({
+  ...LockableSchemaEntries,
   id: v.optional(v.pipe(v.string(), v.uuid())),
   x: v.number(),
   y: v.number(),

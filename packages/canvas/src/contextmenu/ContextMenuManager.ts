@@ -16,6 +16,9 @@ const ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 5.5v-.5a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2H6"/></svg>',
   trash:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
+  lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+  unlock:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.7-1.5"/></svg>',
 };
 
 function serializeTarget(target: ContextMenuTarget): { type: 'canvas' } | { type: 'object'; objectType: string; id: string } {
@@ -99,8 +102,13 @@ export class ContextMenuManager {
 
   openFromPointer(info: CanvasPointerInfo): void {
     if (this.canvas.inputs?.isDragging) return;
-    if (info.target.type === 'object' && !this.canvas.selection.has(info.target.object.id)) {
-      this.canvas.select(info.target.object, info.ctrlKey || info.shiftKey);
+    let target = info.target;
+    if (target.type === 'canvas') {
+      const lockedHit = this.canvas.pick(info.point, { includeLocked: true });
+      if (lockedHit) target = { type: 'object', object: lockedHit };
+    }
+    if (target.type === 'object' && !this.canvas.selection.has(target.object.id)) {
+      this.canvas.select(target.object, info.ctrlKey || info.shiftKey);
     }
     const selection = this.canvas.selected;
     const context: ContextMenuContext = {
@@ -108,7 +116,7 @@ export class ContextMenuManager {
       y: info.point.y,
       screenX: info.screenPoint.x,
       screenY: info.screenPoint.y,
-      target: info.target,
+      target,
       selection,
       shiftKey: info.shiftKey,
       altKey: info.altKey,
@@ -191,13 +199,39 @@ export class ContextMenuManager {
 
   private builtinItems(context: ContextMenuContext): ContextMenuItem[] {
     if (context.selection.length === 0) return [];
-    return [
+    const unlocked = context.selection.filter((obj) => !obj.isLocked);
+    const locked = context.selection.filter((obj) => obj.isLocked);
+    const items: ContextMenuItem[] = [];
+    if (unlocked.length > 0) {
+      items.push({
+        type: 'action',
+        id: 'core:lock',
+        label: 'Lock',
+        hint: 'Ctrl+L',
+        icon: ICONS.lock,
+        order: MENU_ORDER.state,
+        onClick: () => this.canvas.setLocked(unlocked, true),
+      });
+    }
+    if (locked.length > 0) {
+      items.push({
+        type: 'action',
+        id: 'core:unlock',
+        label: 'Unlock',
+        hint: 'Ctrl+L',
+        icon: ICONS.unlock,
+        order: MENU_ORDER.state,
+        onClick: () => this.canvas.setLocked(locked, false),
+      });
+    }
+    items.push(
       {
         type: 'action',
         id: 'core:duplicate',
         label: 'Duplicate',
         icon: ICONS.duplicate,
         order: MENU_ORDER.duplicate,
+        disabled: unlocked.length === 0,
         onClick: () => this.duplicateSelection(),
       },
       {
@@ -207,10 +241,12 @@ export class ContextMenuManager {
         hint: 'Del',
         icon: ICONS.trash,
         danger: true,
+        disabled: unlocked.length === 0,
         order: MENU_ORDER.delete,
         onClick: () => this.canvas.deleteSelected(),
       },
-    ];
+    );
+    return items;
   }
 
   private duplicateSelection(): void {

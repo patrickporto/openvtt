@@ -21,6 +21,7 @@ function defOf(canvas: Tool['canvas'], obj: PlaceableObject): DocumentTypeDefini
 }
 
 function isMovable(canvas: Tool['canvas'], obj: PlaceableObject): boolean {
+  if (obj.isLocked) return false;
   return defOf(canvas, obj)?.behavior?.movable !== false;
 }
 
@@ -370,7 +371,7 @@ class SelectResizing extends Tool {
     };
     this.snapshots = takeSnapshots(
       this.canvas,
-      this.canvas.selected.filter((obj) => defOf(this.canvas, obj)?.transform !== undefined),
+      this.canvas.selected.filter((obj) => !obj.isLocked && defOf(this.canvas, obj)?.transform !== undefined),
     );
     this.changed = false;
     this.committed = false;
