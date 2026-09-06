@@ -30,7 +30,9 @@
     "pixi.js": "^8.15.0"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.11.2",
     "@types/node": "^22.10.0",
+    "happy-dom": "^20.11.2",
     "pixi.js": "^8.15.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.0"

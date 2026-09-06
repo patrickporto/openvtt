@@ -190,8 +190,14 @@ export class TokensPlugin {
                 { icon: ICONS.size },
               ),
               menu.toggle('tokens:hidden', 'Hidden', {
-                checked: doc.hidden ?? false,
-                onClick: () => updateAll(() => ({ hidden: !(doc.hidden ?? false) })),
+                checked: tokens.every((token) => token.document.hidden ?? false),
+                indeterminate:
+                  tokens.some((token) => token.document.hidden ?? false) &&
+                  !tokens.every((token) => token.document.hidden ?? false),
+                onClick: () => {
+                  const target = !tokens.every((token) => token.document.hidden ?? false);
+                  updateAll(() => ({ hidden: target }));
+                },
               }),
             ],
             { order: MENU_ORDER.edit, icon: ICONS.token },
