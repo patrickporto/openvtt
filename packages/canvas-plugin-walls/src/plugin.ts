@@ -229,7 +229,7 @@ export class WallsPlugin implements CanvasPlugin {
 
     ctx.registerContextMenu({
       id: 'walls:scene',
-      when: menuWhen.canvas(),
+      when: menuWhen.any(menuWhen.canvas(), menuWhen.selection('wall')),
       items: () => {
         const hasOpenDoors = this.layer.placeables.some((wall) =>
           wall.segments.some((seg) => (seg.door ?? false) && (seg.doorOpen ?? false)),
@@ -301,9 +301,9 @@ export class WallsPlugin implements CanvasPlugin {
       });
     }
     if (targets.length === 0) return;
-    this.ctx.canvas.history.beginBatch();
+    this.ctx.canvas.history?.beginBatch();
     for (const target of targets) this.layer.update(target.wall.id, { segments: target.segments });
-    this.ctx.canvas.history.endBatch();
+    this.ctx.canvas.history?.endBatch();
     this.ctx.bus.call('scene:refresh', {});
   }
 
@@ -316,11 +316,11 @@ export class WallsPlugin implements CanvasPlugin {
     const { id: _id, ...shared } = wall.document;
     const headSegments = [...wall.segments.slice(0, segmentIndex), head];
     const tailSegments = [tail, ...wall.segments.slice(segmentIndex + 1)];
-    this.ctx.canvas.history.beginBatch();
+    this.ctx.canvas.history?.beginBatch();
     this.layer.delete(wall.id);
     await this.layer.create({ ...shared, segments: headSegments });
     await this.layer.create({ ...shared, segments: tailSegments });
-    this.ctx.canvas.history.endBatch();
+    this.ctx.canvas.history?.endBatch();
   }
 
   joinWallEndpoints(tolerance = 8): number {
@@ -357,7 +357,7 @@ export class WallsPlugin implements CanvasPlugin {
       joined += cluster.length - 1;
     }
     if (byWall.size === 0) return 0;
-    this.ctx.canvas.history.beginBatch();
+    this.ctx.canvas.history?.beginBatch();
     for (const [wallId, segments] of byWall) {
       const wall = this.layer.get(wallId);
       if (!wall) continue;
@@ -371,7 +371,7 @@ export class WallsPlugin implements CanvasPlugin {
       });
       this.layer.update(wallId, { segments: next });
     }
-    this.ctx.canvas.history.endBatch();
+    this.ctx.canvas.history?.endBatch();
     this.ctx.bus.call('scene:refresh', {});
     return joined;
   }
@@ -383,13 +383,13 @@ export class WallsPlugin implements CanvasPlugin {
   }
 
   commitWallPoints(before: Map<string, WallSegmentData[]>): void {
-    this.ctx.canvas.history.beginBatch();
+    this.ctx.canvas.history?.beginBatch();
     for (const [wallId, segments] of before) {
       const wall = this.layer.get(wallId);
       if (!wall || sameSegments(segments, wall.segments)) continue;
-      this.layer.update(wallId, { segments }, { before: { segments } });
+      this.layer.update(wallId, { segments: wall.segments }, { before: { segments } });
     }
-    this.ctx.canvas.history.endBatch();
+    this.ctx.canvas.history?.endBatch();
     this.ctx.bus.call('scene:refresh', {});
   }
 
