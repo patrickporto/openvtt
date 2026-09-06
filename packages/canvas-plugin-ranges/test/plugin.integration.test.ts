@@ -13,7 +13,7 @@ beforeAll(async () => {
   canvas = new CanvasCtor({} as HTMLElement);
   plugin = new RangesPlugin();
   await canvas.use(plugin);
-  (canvas as unknown as { tools: unknown }).tools = { options: {} as Record<string, unknown> };
+  (canvas as unknown as { tools: unknown }).tools = { options: {} as Record<string, unknown>, destroy: () => {} };
 });
 
 afterAll(() => {
@@ -136,7 +136,7 @@ describe('ciclo de vida', () => {
     expect(plugin.place({ x: 0, y: 0 })).toBeNull();
     expect(plugin.active()).toHaveLength(0);
     await canvas.use(plugin);
-    (canvas as unknown as { tools: unknown }).tools = { options: {} as Record<string, unknown> };
+    (canvas as unknown as { tools: unknown }).tools = { options: {} as Record<string, unknown>, destroy: () => {} };
     expect(plugin.place({ x: 0, y: 0, preset: 'basic' })).not.toBeNull();
   });
 });
