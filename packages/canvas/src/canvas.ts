@@ -320,6 +320,7 @@ export class Canvas implements CanvasLike {
       autoDensity: true,
     });
     this.container.appendChild(this.app.canvas);
+    this.animation.attach(this.app.ticker);
 
     this.viewport = new CanvasViewport(this.app, { width, height }, {
       minScale: CONFIG.minScale,

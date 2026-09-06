@@ -22,10 +22,19 @@ export const Easing = {
 };
 
 export class CanvasAnimation {
-  private readonly ticker: Ticker;
+  private ticker: Ticker;
   private readonly active = new Map<string, (ticker: Ticker) => void>();
 
   constructor(ticker: Ticker) {
+    this.ticker = ticker;
+  }
+
+  /**
+   * Reanexa o ticker real após `app.init()` — no pixi v8 `app.ticker` só
+   * existe depois da inicialização, então instâncias criadas antes recebiam
+   * `undefined`.
+   */
+  attach(ticker: Ticker): void {
     this.ticker = ticker;
   }
 
