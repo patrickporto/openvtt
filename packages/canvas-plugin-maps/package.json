@@ -1,0 +1,44 @@
+{
+  "name": "@openvtt/canvas-plugin-maps",
+  "version": "0.1.0",
+  "description": "Maps plugin for @openvtt/canvas — streaming tiled map loading with LOD mipmaps, viewport culling, LRU tile cache and flyweight source sharing.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@openvtt/canvas": "workspace:*",
+    "valibot": "^1.4.2"
+  },
+  "peerDependencies": {
+    "pixi.js": "^8.15.0"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.11.2",
+    "@types/node": "^22.10.0",
+    "happy-dom": "^20.11.2",
+    "pixi.js": "^8.15.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["openvtt", "canvas", "plugin", "maps", "tiles", "vtt", "tabletop"]
+}
