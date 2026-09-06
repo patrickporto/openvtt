@@ -69,6 +69,11 @@ export interface ContextMenuToggle extends ContextMenuItemBase {
   readonly label: string;
   /** Estado inicial; o menu rastreia o estado visual sem mutar o item. */
   readonly checked?: boolean;
+  /**
+   * Estado misto (seleção com valores divergentes): renderiza traço em vez
+   * de check; ativar aplica o mesmo valor a todos os alvos.
+   */
+  readonly indeterminate?: boolean;
   readonly onClick?: (ctx: ContextMenuContext) => void;
 }
 

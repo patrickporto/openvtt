@@ -13,7 +13,7 @@ import { HandlesLayer } from './handles/HandlesLayer';
 import { HistoryManager } from './history/HistoryManager';
 import { LayerManager } from './layers/LayerManager';
 import { BackgroundLayer } from './layers/BackgroundLayer';
-import { GridLayer } from './layers/GridLayer';
+import { GridService } from './grid';
 import type { PlaceablesLayer } from './layers/PlaceablesLayer';
 import type { PlaceableObject, CanvasLike } from './placeables/PlaceableObject';
 import { parseScene, type SceneData, type SceneDataInput } from './schemas';
@@ -71,7 +71,7 @@ export class Canvas implements CanvasLike {
   tools!: ToolManager;
 
   background: BackgroundLayer;
-  grid: GridLayer;
+  grid: GridService;
   preview: PreviewLayer;
   handles: HandlesLayer;
   layers: LayerManager;
@@ -101,7 +101,7 @@ export class Canvas implements CanvasLike {
       zIndex: 0,
       backgroundColor: options.background ?? CONFIG.background,
     });
-    this.grid = new GridLayer({ name: 'grid', zIndex: 950, grid: this.defaultGrid() });
+    this.grid = new GridService(undefined, (grid) => this.bus.emit('grid:change', { grid }));
     this.preview = new PreviewLayer({ name: 'preview', zIndex: 1000 }, this);
     this.handles = new HandlesLayer(this);
     this.layers = new LayerManager(this);
@@ -110,23 +110,12 @@ export class Canvas implements CanvasLike {
     this.contextMenu = new ContextMenuManager(this);
     this.animation = new CanvasAnimation(this.app.ticker);
 
-    for (const layer of [this.background, this.grid, this.preview, this.handles]) {
+    for (const layer of [this.background, this.preview, this.handles]) {
       this.stage.addChild(layer);
     }
     this.layers.register('background', 'Background', this.background, { order: CORE_LAYER_ORDER.background });
-    this.layers.register('grid', 'Grid', this.grid, { order: CORE_LAYER_ORDER.grid });
 
     Canvas.instance = this;
-  }
-
-  private defaultGrid(): GridConfig {
-    return {
-      type: 'square',
-      size: 50,
-      color: CONFIG.grid.color,
-      alpha: CONFIG.grid.alpha,
-      lineWidth: CONFIG.grid.lineWidth,
-    };
   }
 
   /* ------------------------------ plugins ------------------------------ */
@@ -429,9 +418,7 @@ export class Canvas implements CanvasLike {
 
     await this.tearDown();
 
-    const grid = scene.grid ?? { type: 'square' as const, size: 50 };
-    this.grid.setGrid({ ...this.defaultGrid(), ...grid });
-    this.grid.setSize(scene.width, scene.height);
+    this.grid.reset(scene.grid);
 
     if (scene.background) await this.background.setBackground(scene.background, scene.backgroundColor);
 
@@ -441,7 +428,7 @@ export class Canvas implements CanvasLike {
 
     await this.documents.createFromScene(scene as Record<string, unknown>);
 
-    await Promise.all([this.background.draw(), this.grid.draw()]);
+    await this.background.draw();
   }
 
   private async tearDown(): Promise<void> {
@@ -449,7 +436,6 @@ export class Canvas implements CanvasLike {
     await Promise.all([
       this.documents.tearDownAll(),
       this.background.tearDown(),
-      this.grid.tearDown(),
     ]);
     this.preview.clear();
     this.handles?.clear();

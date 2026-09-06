@@ -1,5 +1,5 @@
 import type { Graphics } from 'pixi.js';
-import type { GridConfig, GridType } from './config';
+import { CONFIG, type GridConfig, type GridType } from './config';
 import { toHex } from './utils';
 
 export interface StrokeOptions {
@@ -11,6 +11,95 @@ export interface StrokeOptions {
 export interface CellShape {
   type: 'rect' | 'poly';
   data: number[];
+}
+
+export interface CellIndex {
+  col: number;
+  row: number;
+}
+
+const GRID_KEYS = ['type', 'size', 'color', 'alpha', 'lineWidth', 'offsetX', 'offsetY'] as const;
+
+/**
+ * Estado do grid como servi├ºo do core: plugins leem `canvas.grid` para
+ * convers├╡es c├⌐lula/pixel e snapping; a renderiza├º├úo do grid ├⌐ contribu├¡da
+ * pelo plugin `@openvtt/canvas-plugin-grid`, que observa `grid:change`.
+ */
+export class GridService implements GridConfig {
+  type: GridType;
+  size: number;
+  color?: number | string;
+  alpha?: number;
+  lineWidth?: number;
+  offsetX?: number;
+  offsetY?: number;
+
+  constructor(
+    defaults: Partial<GridConfig> = {},
+    private readonly notify?: (grid: GridConfig) => void,
+  ) {
+    this.type = defaults.type ?? 'square';
+    this.size = defaults.size ?? 50;
+    this.color = defaults.color ?? CONFIG.grid.color;
+    this.alpha = defaults.alpha ?? CONFIG.grid.alpha;
+    this.lineWidth = defaults.lineWidth ?? CONFIG.grid.lineWidth;
+    this.offsetX = defaults.offsetX;
+    this.offsetY = defaults.offsetY;
+  }
+
+  set(changes: Partial<GridConfig>): void {
+    this.apply(changes);
+  }
+
+  reset(config: Partial<GridConfig> = {}): void {
+    this.apply({
+      type: 'square',
+      size: 50,
+      color: CONFIG.grid.color,
+      alpha: CONFIG.grid.alpha,
+      lineWidth: CONFIG.grid.lineWidth,
+      offsetX: undefined,
+      offsetY: undefined,
+      ...config,
+    });
+  }
+
+  setType(type: GridType): void {
+    this.set({ type });
+  }
+
+  setSize(size: number): void {
+    this.set({ size });
+  }
+
+  snapshot(): GridConfig {
+    return {
+      type: this.type,
+      size: this.size,
+      color: this.color,
+      alpha: this.alpha,
+      lineWidth: this.lineWidth,
+      offsetX: this.offsetX,
+      offsetY: this.offsetY,
+    };
+  }
+
+  snapToGrid(x: number, y: number): { x: number; y: number } {
+    return GridRenderer.snapToGrid(x, y, this.type, this.size, this.offsetX ?? 0, this.offsetY ?? 0);
+  }
+
+  snapToIntersection(x: number, y: number): { x: number; y: number } {
+    return GridRenderer.snapToIntersection(x, y, this.type, this.size, this.offsetX ?? 0, this.offsetY ?? 0);
+  }
+
+  private apply(config: Partial<GridConfig>): void {
+    const target = this as Record<string, unknown>;
+    const source = config as Record<string, unknown>;
+    for (const key of GRID_KEYS) {
+      if (key in config) target[key] = source[key];
+    }
+    this.notify?.(this.snapshot());
+  }
 }
 
 export class GridRenderer {
@@ -32,13 +121,13 @@ export class GridRenderer {
         this.drawSquare(graphics, width, height, size, options, offsetX, offsetY);
         return;
       case 'hex-vertical':
-        this.drawHex(graphics, width, height, size, 'vertical', options);
+        this.drawHex(graphics, width, height, size, 'vertical', options, offsetX, offsetY);
         return;
       case 'hex-horizontal':
-        this.drawHex(graphics, width, height, size, 'horizontal', options);
+        this.drawHex(graphics, width, height, size, 'horizontal', options, offsetX, offsetY);
         return;
       case 'isometric':
-        this.drawIsometric(graphics, width, height, size, options);
+        this.drawIsometric(graphics, width, height, size, options, offsetX, offsetY);
         return;
     }
   }
@@ -70,25 +159,33 @@ export class GridRenderer {
     size: number,
     orientation: 'vertical' | 'horizontal',
     options: StrokeOptions,
+    offsetX = 0,
+    offsetY = 0,
   ): void {
     if (orientation === 'vertical') {
       const hexHeight = size;
       const hexWidth = (Math.sqrt(3) / 2) * hexHeight;
       const vertDist = hexHeight * 0.75;
-      for (let row = 0; row * vertDist < height + hexHeight; row++) {
-        for (let col = 0; col * hexWidth < width + hexWidth; col++) {
-          const ox = row % 2 === 1 ? hexWidth / 2 : 0;
-          this.traceHexagon(graphics, col * hexWidth + ox, row * vertDist, size / 2, true);
+      const rowStart = Math.floor((-hexHeight - offsetY) / vertDist);
+      for (let row = rowStart; row * vertDist + offsetY < height + hexHeight; row++) {
+        const cy = row * vertDist + offsetY;
+        const ox = Math.abs(row) % 2 === 1 ? hexWidth / 2 : 0;
+        const colStart = Math.floor((-hexWidth - offsetX - ox) / hexWidth);
+        for (let col = colStart; col * hexWidth + ox + offsetX < width + hexWidth; col++) {
+          this.traceHexagon(graphics, col * hexWidth + ox + offsetX, cy, size / 2, true);
         }
       }
     } else {
       const hexWidth = size;
       const hexHeight = (Math.sqrt(3) / 2) * hexWidth;
       const horizDist = hexWidth * 0.75;
-      for (let col = 0; col * horizDist < width + hexWidth; col++) {
-        for (let row = 0; row * hexHeight < height + hexHeight; row++) {
-          const oy = col % 2 === 1 ? hexHeight / 2 : 0;
-          this.traceHexagon(graphics, col * horizDist, row * hexHeight + oy, size / 2, false);
+      const colStart = Math.floor((-hexWidth - offsetX) / horizDist);
+      for (let col = colStart; col * horizDist + offsetX < width + hexWidth; col++) {
+        const cx = col * horizDist + offsetX;
+        const oy = Math.abs(col) % 2 === 1 ? hexHeight / 2 : 0;
+        const rowStart = Math.floor((-hexHeight - offsetY - oy) / hexHeight);
+        for (let row = rowStart; row * hexHeight + oy + offsetY < height + hexHeight; row++) {
+          this.traceHexagon(graphics, cx, row * hexHeight + oy + offsetY, size / 2, false);
         }
       }
     }
@@ -119,17 +216,21 @@ export class GridRenderer {
     height: number,
     size: number,
     options: StrokeOptions,
+    offsetX = 0,
+    offsetY = 0,
   ): void {
     const isoWidth = size;
     const isoHeight = size / 2;
-    const numDiagonals = Math.ceil((width + height) / isoWidth) * 2;
+    const y0 = offsetY - isoHeight * 2;
+    const y1 = offsetY + height + isoHeight * 2;
+    const span = y1 - y0;
+    const numDiagonals = Math.ceil((width + height) / isoWidth) * 2 + 2;
     for (let i = -numDiagonals; i <= numDiagonals; i++) {
-      const startX = i * isoWidth;
-      graphics.moveTo(startX, 0);
-      graphics.lineTo(startX + height * (isoWidth / isoHeight), height);
-      const startX2 = i * isoWidth;
-      graphics.moveTo(startX2, 0);
-      graphics.lineTo(startX2 - height * (isoWidth / isoHeight), height);
+      const startX = i * isoWidth + offsetX;
+      graphics.moveTo(startX, y0);
+      graphics.lineTo(startX + span * (isoWidth / isoHeight), y1);
+      graphics.moveTo(startX, y0);
+      graphics.lineTo(startX - span * (isoWidth / isoHeight), y1);
     }
     graphics.stroke({ color: options.color, width: options.width, alpha: options.alpha });
   }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { Graphics } from 'pixi.js';
 import { GridRenderer } from '../src/grid';
 
 describe('GridRenderer.snapToGrid', () => {
@@ -45,5 +46,28 @@ describe('GridRenderer.getCellShape', () => {
     const shape = GridRenderer.getCellShape(100, 100, 'hex-vertical', 50);
     expect(shape?.type).toBe('poly');
     expect(shape?.data.length).toBe(12);
+  });
+});
+
+describe('GridRenderer.draw with offsets', () => {
+  it('renders every type with non-zero offsets without throwing', () => {
+    for (const type of ['square', 'hex-vertical', 'hex-horizontal', 'isometric'] as const) {
+      const graphics = new Graphics();
+      expect(() =>
+        GridRenderer.draw(graphics, 800, 600, type, 50, { color: 0, alpha: 1, width: 1 }, 17, -23),
+      ).not.toThrow();
+      graphics.destroy();
+    }
+  });
+
+  it('hex drawing covers the scene origin with positive offsets', () => {
+    const graphics = new Graphics();
+    GridRenderer.draw(graphics, 400, 300, 'hex-vertical', 60, { color: 0, alpha: 1, width: 1 }, 25, 35);
+    const snapped = GridRenderer.snapToGrid(5, 5, 'hex-vertical', 60, 25, 35);
+    expect(snapped.x).toBeGreaterThanOrEqual(-30);
+    expect(snapped.x).toBeLessThanOrEqual(400 + 30);
+    expect(snapped.y).toBeGreaterThanOrEqual(-30);
+    expect(snapped.y).toBeLessThanOrEqual(300 + 30);
+    graphics.destroy();
   });
 });

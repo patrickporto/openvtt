@@ -6,6 +6,7 @@ import {
   ContextMenuItemsHookSchema,
   ContextMenuOpenEventSchema,
 } from './contextmenu/types';
+import { GridSchema } from './schemas';
 
 const PointSchema = v.object({ x: v.number(), y: v.number() });
 const PointerSchema = v.object({
@@ -42,6 +43,7 @@ const canvasEvents = {
       }),
     ),
   }),
+  'grid:change': v.object({ grid: GridSchema }),
   'selection:change': v.object({ ids: v.array(v.string()) }),
   'plugin:registered': v.object({ id: v.string() }),
   'document:type': v.object({ type: v.string() }),

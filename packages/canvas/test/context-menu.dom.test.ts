@@ -112,6 +112,18 @@ describe('OpenVTTContextMenu (DOM)', () => {
     el.close();
   });
 
+  it('renders an indeterminate dash that becomes a check on activate', () => {
+    const item = menu.toggle('p:t', 'T', { checked: false, indeterminate: true, onClick: () => {} });
+    const el = openMenu([item], () => {});
+    const row = el.shadowRoot!.querySelector('.item')!;
+    const check = row.querySelector('.check')!;
+    expect(check.innerHTML).toContain('M6 12h12');
+    row.click();
+    expect(check.innerHTML).not.toContain('M6 12h12');
+    expect(check.innerHTML).not.toBe('');
+    el.close();
+  });
+
   it('contains custom render errors', () => {
     const item = menu.custom('p:c', () => {
       throw new Error('boom');

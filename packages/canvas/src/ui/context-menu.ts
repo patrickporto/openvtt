@@ -17,6 +17,7 @@ export interface ContextMenuOpenOptions {
 
 const SVG = {
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+  dash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 12h12"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>',
 };
 
@@ -176,9 +177,10 @@ export class OpenVTTContextMenu extends HTMLElement {
       `item${item.danger ? ' danger' : ''}${item.disabled ? ' disabled' : ''}`;
     row.setAttribute('role', 'menuitem');
     row.setAttribute('aria-disabled', String(item.disabled ?? false));
-    const checked = item.type === 'toggle' && this.displayChecked(item);
+    const checked =
+      item.type === 'toggle' && (item.indeterminate ? SVG.dash : this.displayChecked(item) ? SVG.check : '');
     row.innerHTML = `
-      <span class="check">${checked ? SVG.check : ''}</span>
+      <span class="check">${checked || ''}</span>
       <span class="icon">${renderIcon(item.icon)}</span>
       <span class="label">${escapeHtml(item.label ?? '')}</span>
       ${item.hint ? `<span class="hint">${escapeHtml(item.hint)}</span>` : ''}
@@ -242,7 +244,7 @@ export class OpenVTTContextMenu extends HTMLElement {
       return;
     }
     if (item.type === 'toggle') {
-      const next = !this.displayChecked(item);
+      const next = item.indeterminate ? true : !this.displayChecked(item);
       this.checkedOverrides = new Map(this.checkedOverrides).set(item.id, next);
       const check = row.querySelector('.check');
       if (check) check.innerHTML = next ? SVG.check : '';
