@@ -1,7 +1,7 @@
 {
-  "name": "@openvtt/canvas-plugin-image-editor",
+  "name": "@openvtt/canvas-plugin-window",
   "version": "0.1.0",
-  "description": "Image editor plugin for @openvtt/canvas — crop (pan/zoom/rotate/flip), advanced masks and ring overlay for token art; built-in customizable UI plus a headless API for custom interfaces.",
+  "description": "Window manager for @openvtt/canvas — floating, modal, dockable, snappable windows with taskbar and state persistence.",
   "type": "module",
   "license": "MIT",
   "main": "./dist/index.cjs",
@@ -24,20 +24,18 @@
   },
   "dependencies": {
     "@openvtt/canvas": "workspace:*",
-    "@openvtt/canvas-plugin-window": "workspace:*",
+    "uuid": "^11.1.1",
     "valibot": "^1.4.2"
   },
-  "peerDependencies": {
-    "pixi.js": "^8.15.0"
-  },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.11.2",
     "@types/node": "^22.10.0",
-    "pixi.js": "^8.15.0",
+    "happy-dom": "^20.11.2",
     "tsup": "^8.4.0",
     "typescript": "^5.8.0"
   },
   "publishConfig": {
     "access": "public"
   },
-  "keywords": ["openvtt", "canvas", "plugin", "image", "editor", "token", "crop", "mask", "vtt"]
+  "keywords": ["openvtt", "canvas", "plugin", "window", "window-manager", "dock", "modal", "vtt", "tabletop"]
 }

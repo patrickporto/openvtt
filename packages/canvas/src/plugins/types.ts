@@ -125,6 +125,74 @@ export interface LayerContribution {
   locked?: boolean;
 }
 
+/* ------------------------------- windows -------------------------------- */
+
+/** Borda de docking de janelas. */
+export type WindowDockEdge = 'left' | 'right' | 'bottom';
+
+/** Posicionamento de uma janela: flutuante ou docada numa borda. */
+export type WindowDockTarget = 'float' | WindowDockEdge;
+
+/** Limites de geometria aplicados a resize, maximize e restore. */
+export interface WindowConstraints {
+  minWidth?: number;
+  minHeight?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+  aspectRatio?: number;
+}
+
+/** Estado lógico de uma janela. */
+export type WindowStateKind = 'normal' | 'minimized' | 'maximized';
+
+/**
+ * Declaração de janela registrável. O conteúdo é lazy: a factory só roda na
+ * primeira abertura. Implementado pelo plugin `windows`
+ * (`@openvtt/canvas-plugin-window`); registrar sem ele instalado lança erro.
+ */
+export interface WindowContribution {
+  /** Id estável da definição (usado para reabrir e restaurar). */
+  id: string;
+  title: string;
+  /**
+   * 'single' (default): `open` reusa/foca a instância existente;
+   * 'multi': cada `open` cria uma nova instância.
+   */
+  instances?: 'single' | 'multi';
+  /** Cria o conteúdo da janela na primeira abertura. */
+  factory: (owner: PluginContext) => HTMLElement | Promise<HTMLElement>;
+  width?: number;
+  height?: number;
+  /** Posição inicial (px, relativa ao host do canvas). Default: centrada. */
+  x?: number;
+  y?: number;
+  /** Janela modal com backdrop bloqueando o canvas. */
+  modal?: boolean;
+  /** Modal persistente: Esc e clique no backdrop não fecham. */
+  persistent?: boolean;
+  closable?: boolean;
+  minimizable?: boolean;
+  maximizable?: boolean;
+  resizable?: boolean;
+  /** Habilita o botão de popout (exige `popout: true` no manager do plugin windows). */
+  popoutable?: boolean;
+  dock?: WindowDockTarget;
+  /** Bordas onde esta janela pode docar (default: todas as habilitadas pelo manager; false nunca doca). */
+  dockableEdges?: WindowDockEdge[] | false;
+  constraints?: WindowConstraints;
+  /** Serializa o conteúdo da janela para `manager.serialize()`. */
+  serializeContent?: (content: HTMLElement) => unknown;
+  /** Restaura em `manager.restore()` o conteúdo serializado por `serializeContent`. */
+  restoreContent?: (content: HTMLElement, data: unknown) => void;
+}
+
+/** Capacidade implementada pelo plugin `windows` para receber registros. */
+export interface WindowRegistrar {
+  registerWindow(contribution: WindowContribution, owner: PluginContext): void;
+  /** Remove a definição e fecha as janelas dela (usado no uninstall). */
+  unregisterWindow?(definitionId: string): void;
+}
+
 /**
  * API disponível ao plugin durante install/uninstall. Todas as
  * contribuições registradas aqui são desfeitas automaticamente no
@@ -141,6 +209,11 @@ export interface PluginContext {
    * A contribuição é desfeita automaticamente no uninstall.
    */
   registerContextMenu(contribution: ContextMenuContribution): void;
+  /**
+   * Declara uma janela gerenciada pelo plugin `windows`. Requer
+   * `@openvtt/canvas-plugin-window` instalado (declare a dependência).
+   */
+  registerWindow(contribution: WindowContribution): void;
   /** Registra cleanup executado no uninstall do plugin e no destroy do canvas. */
   onDispose(fn: () => void): void;
 }

@@ -143,6 +143,11 @@ export class Canvas implements CanvasLike {
     return this._selection;
   }
 
+  /** Elemento host do canvas (container passado no construtor). */
+  get host(): HTMLElement {
+    return this.container;
+  }
+
   get interactionDisabled(): boolean {
     return this._interactionDisabled;
   }

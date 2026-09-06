@@ -18,6 +18,12 @@ export type {
   LayerContribution,
   TransformAdapter,
   ResizeRect,
+  WindowDockEdge,
+  WindowDockTarget,
+  WindowConstraints,
+  WindowStateKind,
+  WindowContribution,
+  WindowRegistrar,
 } from './plugins/types';
 
 export { DocumentRegistry } from './documents';
@@ -52,20 +58,20 @@ export { PlaceablesLayer } from './layers/PlaceablesLayer';
 export type { PlaceablesLayerOptions, LayerMutation } from './layers/PlaceablesLayer';
 export { BackgroundLayer } from './layers/BackgroundLayer';
 export type { BackgroundLayerOptions } from './layers/BackgroundLayer';
-export { GridLayer } from './layers/GridLayer';
-export type { GridLayerOptions } from './layers/GridLayer';
 export { LayerManager } from './layers/LayerManager';
 export type { CanvasLayerState, LayerMoveDirection, LayerRegisterOptions } from './layers/LayerManager';
 
 /* ------------------------------ placeables ---------------------------- */
 
 export { PlaceableObject } from './placeables/PlaceableObject';
-export type { PlaceableObjectOptions, CanvasAnimationLike } from './placeables/PlaceableObject';
+export type { PlaceableObjectOptions, CanvasAnimationLike, SelectionFrame } from './placeables/PlaceableObject';
 
 /* ------------------------------- grid --------------------------------- */
 
-export { GridRenderer } from './grid';
-export type { StrokeOptions, CellShape } from './grid';
+export { GridRenderer, GridService } from './grid';
+export type { StrokeOptions, CellShape, CellIndex } from './grid';
+export { GridPath } from './gridPath';
+export type { GridPathOptions } from './gridPath';
 
 /* ----------------------------- viewport ------------------------------- */
 

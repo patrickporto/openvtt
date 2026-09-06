@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { MENU_ORDER, definePlugin, menu, menuControls, menuWhen, type PluginContext } from '@openvtt/canvas';
 import { FogOfWarLayer } from './FogOfWarLayer';
 import { createFogTools, type FogToolOptions } from './tools/fog';
+import { defineFogElements, FOG_PANEL_TAG, type OpenVTTFogPanel } from './ui/fog-panel';
 
 const DEFAULT_TOOL_OPTIONS: FogToolOptions = { brushSize: 100 };
 
@@ -38,6 +39,22 @@ export const fogPlugin = definePlugin({
     const { FogRevealTool, FogPaintTool } = createFogTools(fogLayer);
     ctx.registerTool({ tool: FogRevealTool, hotkey: 'f', defaults: { ...DEFAULT_TOOL_OPTIONS } });
     ctx.registerTool({ tool: FogPaintTool, hotkey: 'g', defaults: { ...DEFAULT_TOOL_OPTIONS } });
+
+    if (ctx.canvas.plugins.has('windows')) {
+      ctx.registerWindow({
+        id: 'fog',
+        title: 'Fog of War',
+        width: 260,
+        height: 420,
+        dock: 'right',
+        factory: () => {
+          defineFogElements();
+          const panel = document.createElement(FOG_PANEL_TAG) as OpenVTTFogPanel;
+          panel.canvas = ctx.canvas;
+          return panel;
+        },
+      });
+    }
 
     ctx.registerContextMenu({
       id: 'fog:context',

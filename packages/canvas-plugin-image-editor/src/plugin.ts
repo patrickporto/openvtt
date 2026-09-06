@@ -1,6 +1,8 @@
 import * as v from 'valibot';
 import { dynamicBus, MENU_ORDER, menu, type PluginContext } from '@openvtt/canvas';
+import type { WindowsPlugin } from '@openvtt/canvas-plugin-window';
 import { ImageEditor } from './editor';
+import { defineImageEditorElements, OpenVTTImageEditor } from './ui/image-editor';
 import type { ImageEditorSettings } from './composer';
 
 const ICONS = {
@@ -16,12 +18,16 @@ export interface ImageEditorPluginOptions {
   openOnDoubleClick?: boolean;
   /** Defaults de composição aplicados a novos editores. */
   defaultSettings?: Partial<ImageEditorSettings>;
+  /** Janela do editor maximizável (default true). */
+  maximizable?: boolean;
 }
 
 /**
  * Image editor: edição de arte de placeables (crop, máscaras, anel) com API
- * headless (`createEditor`) para interfaces customizadas e UI built-in
- * opcional (`<openvtt-image-editor>`).
+ * headless (`createEditor`) para interfaces customizadas. A UI built-in
+ * (`<openvtt-image-editor>`) abre numa janela gerenciada pelo plugin
+ * `windows` (dependência dura): fechar, mover, minimizar, maximizar e
+ * redimensionar vêm do frame da janela.
  *
  * Totalmente desacoplado dos plugins de documento: descobre alvos pelo
  * metadado `imageField` do `DocumentTypeDefinition` — qualquer plugin que
@@ -30,14 +36,17 @@ export interface ImageEditorPluginOptions {
 export class ImageEditorPlugin {
   readonly id = 'imageEditor';
   readonly name = 'Image Editor';
+  readonly dependencies = ['windows'] as const;
 
   private ctx!: PluginContext;
   private readonly openOnDoubleClick: boolean;
   private readonly defaultSettings?: Partial<ImageEditorSettings>;
+  private readonly maximizable: boolean;
 
   constructor(options: ImageEditorPluginOptions = {}) {
     this.openOnDoubleClick = options.openOnDoubleClick ?? true;
     this.defaultSettings = options.defaultSettings;
+    this.maximizable = options.maximizable ?? true;
   }
 
   install(ctx: PluginContext): void {
@@ -45,6 +54,25 @@ export class ImageEditorPlugin {
 
     ctx.bus.registerEvent('imageEditor:opened', v.object({ type: v.string(), id: v.string() }));
     ctx.bus.registerEvent('imageEditor:applied', v.object({ type: v.string(), id: v.string() }));
+
+    ctx.registerWindow({
+      id: 'imageEditor',
+      title: 'Token editor',
+      width: 340,
+      height: 560,
+      minimizable: true,
+      maximizable: this.maximizable,
+      factory: () => {
+        defineImageEditorElements();
+        const panel = document.createElement('openvtt-image-editor') as OpenVTTImageEditor;
+        panel.canvas = ctx.canvas;
+        panel.addEventListener('image-edited', (event) => {
+          const detail = (event as CustomEvent<{ type: string; id: string }>).detail;
+          if (detail) this.notifyApplied(detail.type, detail.id);
+        });
+        return panel;
+      },
+    });
 
     if (this.openOnDoubleClick) {
       ctx.bus.tap('select:doubleclick', 'imageEditor', (payload) => {
@@ -78,12 +106,17 @@ export class ImageEditorPlugin {
     });
   }
 
-  /** Abre (cria + emite evento) um editor para o documento. */
-  open(type: string, id: string): ImageEditor {
-    const editor = this.createEditor();
-    void editor.loadFromDocument(type, id).catch(() => undefined);
+  /**
+   * Abre (ou foca) a janela do editor para o documento e carrega a arte
+   * atual. Emite `imageEditor:opened`.
+   */
+  open(type: string, id: string): void {
+    const windows = this.ctx.canvas.plugins.get<WindowsPlugin>('windows');
+    if (!windows) return;
+    const handle = windows.manager.open('imageEditor');
+    const panel = handle?.content as OpenVTTImageEditor | null;
+    if (panel) panel.edit(type, id);
     dynamicBus(this.ctx.bus).emit('imageEditor:opened', { type, id });
-    return editor;
   }
 
   /** Notifica aplicação (usado pela UI built-in; UIs próprias podem chamar). */

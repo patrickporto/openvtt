@@ -9,6 +9,8 @@ import type {
   LayerContribution,
   PluginContext,
   ToolContribution,
+  WindowContribution,
+  WindowRegistrar,
 } from './types';
 
 class PluginContextImpl implements PluginContext {
@@ -42,6 +44,17 @@ class PluginContextImpl implements PluginContext {
   registerContextMenu(contribution: ContextMenuContribution): void {
     const unregister = this.canvas.contextMenu.register(contribution);
     this.disposers.push(unregister);
+  }
+
+  registerWindow(contribution: WindowContribution): void {
+    const registrar = this.canvas.plugins.get<WindowRegistrar>('windows');
+    if (!registrar || typeof registrar.registerWindow !== 'function') {
+      throw new Error(
+        '[canvas] registerWindow requires the "windows" plugin — install @openvtt/canvas-plugin-window first (declare dependencies: ["windows"])',
+      );
+    }
+    registrar.registerWindow(contribution, this);
+    this.disposers.push(() => registrar.unregisterWindow?.(contribution.id));
   }
 
   onDispose(fn: () => void): void {
@@ -122,7 +135,7 @@ export class PluginManager {
   }
 
   /** Retorna a instância do plugin (para acesso a APIs expostas pelo próprio plugin). */
-  get<P extends CanvasPlugin = CanvasPlugin>(id: string): P | undefined {
+  get<P = CanvasPlugin>(id: string): P | undefined {
     return this.installed.get(id)?.plugin as P | undefined;
   }
 

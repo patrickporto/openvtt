@@ -23,11 +23,7 @@ const STYLE = `
     flex-direction: column;
     gap: 8px;
   }
-  .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .title {
-    font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
-    text-transform: uppercase; color: var(--ovtt-text-dim, #9a8f78);
-  }
+  .head { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
   .row > span { flex: 1; }
   .preview-wrap {
@@ -122,7 +118,6 @@ export class OpenVTTImageEditor extends HTMLElement {
       <style>${STYLE}</style>
       <div class="panel" part="panel">
         <div class="head">
-          <span class="title">Token editor</span>
           <div class="btn-row">
             <button class="upload" ${disabled}>Upload</button>
             <input type="file" accept="image/*" hidden class="file" />
