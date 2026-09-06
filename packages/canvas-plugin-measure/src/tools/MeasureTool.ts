@@ -1,4 +1,5 @@
 import { Tool, dynamicBus, type CanvasPointerInfo, type Point } from '@openvtt/canvas';
+import { buildMeasurePayload, formatMetrics, pathLength, resolveMeasureOptions } from '../resolve';
 
 class MeasureIdle extends Tool {
   static id = 'idle';
@@ -52,9 +53,8 @@ class MeasureMeasuring extends Tool {
   }
 
   private labelFor(end: Point): string {
-    const pixels = Math.hypot(end.x - this.start.x, end.y - this.start.y);
-    const units = pixels / this.canvas.grid.size;
-    return `${units.toFixed(1)} u`;
+    const cells = Math.hypot(end.x - this.start.x, end.y - this.start.y) / this.canvas.grid.size;
+    return formatMetrics(resolveMeasureOptions(this.toolOptions('measure')), cells);
   }
 }
 
@@ -96,11 +96,15 @@ class MeasureWaypoints extends Tool {
   private render(cursor: Point): void {
     this.preview.clear();
     if (this.points.length === 0) return;
+    const options = resolveMeasureOptions(this.toolOptions('measure'));
     const path = [...this.points, cursor];
     this.preview.ghostPolyline(path);
     const total = pathLength(path) / this.canvas.grid.size;
     const last = pathLength(this.points.length >= 2 ? this.points.slice(-2) : [this.points[0], cursor]) / this.canvas.grid.size;
-    const label = this.points.length >= 2 ? `${total.toFixed(1)} u (+${last.toFixed(1)})` : `${total.toFixed(1)} u`;
+    const label =
+      this.points.length >= 2
+        ? `${formatMetrics(options, total)} (+${formatMetrics(options, last)})`
+        : formatMetrics(options, total);
     this.preview.showLabel(label, cursor.x + 12, cursor.y - 24);
   }
 
@@ -110,25 +114,9 @@ class MeasureWaypoints extends Tool {
   }
 }
 
-function pathLength(points: Point[]): number {
-  let sum = 0;
-  for (let i = 1; i < points.length; i++) sum += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
-  return sum;
-}
-
 function emitMeasure(tool: Tool, points: Point[]): void {
-  const pixels = pathLength(points);
-  const first = points[0];
-  const last = points[points.length - 1];
-  dynamicBus(tool.canvas.bus).emit('measure', {
-    pixels,
-    units: pixels / tool.canvas.grid.size,
-    x1: first.x,
-    y1: first.y,
-    x2: last.x,
-    y2: last.y,
-    segments: points.length - 1,
-  });
+  const options = resolveMeasureOptions(tool.toolOptions('measure'));
+  dynamicBus(tool.canvas.bus).emit('measure', buildMeasurePayload(options, points, tool.canvas.grid.size));
 }
 
 export class MeasureTool extends Tool {
