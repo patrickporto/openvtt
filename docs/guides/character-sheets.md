@@ -291,6 +291,8 @@ computed.rollTransforms;   // active roll transforms for buildRoll
 computed.audit;            // AuditEntry[] — why every number is what it is
 ```
 
+`compute()` is memoized — it returns the same reference until the next mutation — and the result is **deeply frozen**: do not mutate it (strict mode throws a `TypeError`).
+
 ### The audit trail: "why is AC 14?"
 
 Every pass of the pipeline records an entry:
@@ -332,15 +334,22 @@ Pass a bus (ideally `createSheetBus()`, which ships the matching contract) and t
 | `trigger:roll` | `{ instanceId, on, value }` | A trigger rolled |
 
 ```ts
+import * as v from 'valibot';
 import { createSheetBus } from '@openvtt/sheet';
 
-const bus = createSheetBus();
+const bus = createSheetBus({
+  events: {
+    'round:end': v.object({}), // declare gameplay events for typed emit/on
+  },
+});
 bus.on('computed', ({ patches }) => ui.applyPatches(patches));
 
 const engine = new SheetEngine(doc, { pack, bus });
 engine.attach();
-bus.emit('round:end');   // ticks round durations, fires triggers
+bus.emit('round:end', {});   // ticks round durations, fires triggers
 ```
+
+Gameplay events (`round:end`, `turn:start`, `clock:tick`, ...) are not part of the base sheet contract. Declaring them in the `events` option of `createSheetBus` merges them into the contract, making `bus.emit(...)` / `bus.on(...)` fully typed for those names — and keeps the bus compatible with `unknownEvents: 'reject'`.
 
 ## Validating packs
 
@@ -354,7 +363,7 @@ try {
 }
 ```
 
-`validatePack` checks the Valibot schema, parses every formula (derived, conditions, change values, bonuses), verifies ordinal ladder references, and detects derived-formula and condition cycles. The engine runs it automatically unless `validate: false`. `defineSystemPack` is the identity-style helper for authoring packs with full type inference.
+`validatePack` checks the Valibot schema (including duration invariants: `value` for `seconds`/`rounds`/`turns`, `event` for `until-event`), parses every formula (derived, conditions, change values, bonuses), verifies ordinal ladder references, and detects derived-formula and condition cycles. The engine runs it automatically on construction unless `validate: false`. `defineSystemPack` is an identity helper for authoring packs with full type inference — it performs **no validation**; the check happens explicitly via `validatePack` or implicitly when the engine is constructed.
 
 ## Path utilities
 
@@ -372,6 +381,7 @@ diffFlattened(before, after);                      // SheetPatch[] { path, previ
 ## Worked mini-example
 
 ```ts
+import * as v from 'valibot';
 import { fromFormula } from '@openvtt/dice-notation';
 import { evaluateRoll } from '@openvtt/dice-core';
 import {
@@ -409,7 +419,9 @@ const doc = createDocument(pack, {
   base: { level: 2, ac: 12, abilities: { str: { score: 16 }, con: { mod: 2 } } },
 });
 
-const bus = createSheetBus();
+const bus = createSheetBus({
+  events: { 'round:end': v.object({}) },
+});
 const engine = new SheetEngine(doc, { pack, bus });
 engine.attach();
 
@@ -422,9 +434,9 @@ engine.compute().values['ac'];       // 14
 const enlarged = engine.applyEffect('enlarge', { source: { kind: 'spell' } });
 engine.compute().values['damage.bonus'];  // 2
 
-bus.emit('round:end');
-bus.emit('round:end');
-bus.emit('round:end');               // third tick → 'effect:expired'
+bus.emit('round:end', {});
+bus.emit('round:end', {});
+bus.emit('round:end', {});               // third tick → 'effect:expired'
 engine.compute().values['damage.bonus'];  // 0 (undefined → 0 in formulas)
 
 const attackExpr = engine.buildRoll('attack');
