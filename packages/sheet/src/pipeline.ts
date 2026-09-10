@@ -311,7 +311,7 @@ export function applyChanges(
         effectId: entry.instance.id,
         ref: entry.definition.id,
         target: change.target,
-        transform: change.transform,
+        transform: structuredClone(change.transform),
       });
     }
   }
@@ -517,8 +517,8 @@ export function computeSheet(
     flags,
     scope: { ...values, flags },
     audit: applied.audit,
-    effects: sorted.map((e) => e.instance),
-    suppressed,
+    effects: sorted.map((e) => structuredClone(e.instance)),
+    suppressed: suppressed.map((s) => ({ reason: s.reason, instance: structuredClone(s.instance) })),
     rollTransforms: applied.rollTransforms,
   };
 }

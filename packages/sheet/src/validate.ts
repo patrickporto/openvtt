@@ -119,4 +119,6 @@ function detectConditionCycle(pack: SystemPack): readonly string[] | undefined {
   return 'cycle' in result ? result.cycle : undefined;
 }
 
-export const defineSystemPack = validatePack;
+export function defineSystemPack(pack: SystemPack): SystemPack {
+  return pack;
+}

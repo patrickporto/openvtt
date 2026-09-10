@@ -47,17 +47,29 @@ export const changeSchema: v.GenericSchema = v.union([
   }),
 ]);
 
-const durationSpecSchema = v.strictObject({
-  unit: v.picklist(['seconds', 'rounds', 'turns', 'until-event']),
-  value: v.optional(v.number()),
-  event: v.optional(v.string()),
-});
+const durationSpecSchema = v.pipe(
+  v.strictObject({
+    unit: v.picklist(['seconds', 'rounds', 'turns', 'until-event']),
+    value: v.optional(v.number()),
+    event: v.optional(v.string()),
+  }),
+  v.check(
+    (d) => (d.unit === 'until-event' ? d.event !== undefined : d.value !== undefined),
+    'duration requires "event" for unit "until-event" and "value" otherwise',
+  ),
+);
 
-const expirationStateSchema = v.strictObject({
-  unit: v.picklist(['seconds', 'rounds', 'turns', 'until-event']),
-  remaining: v.optional(v.number()),
-  event: v.optional(v.string()),
-});
+export const expirationStateSchema = v.pipe(
+  v.strictObject({
+    unit: v.picklist(['seconds', 'rounds', 'turns', 'until-event']),
+    remaining: v.optional(v.number()),
+    event: v.optional(v.string()),
+  }),
+  v.check(
+    (e) => (e.unit === 'until-event' ? e.event !== undefined : e.remaining !== undefined),
+    'expiration requires "event" for unit "until-event" and "remaining" otherwise',
+  ),
+);
 
 const triggerSchema = v.strictObject({
   on: v.string(),

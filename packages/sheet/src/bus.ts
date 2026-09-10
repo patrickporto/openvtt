@@ -1,6 +1,7 @@
 import * as v from 'valibot';
 import { createBus, defineContract } from '@openvtt/events';
-import type { BusOptions } from '@openvtt/events';
+import type { BusOptions, EventBus, EventMap } from '@openvtt/events';
+import { SheetError } from './errors';
 
 const instanceRef = v.looseObject({
   instanceId: v.string(),
@@ -29,8 +30,27 @@ export const sheetContract = defineContract({
   },
 });
 
-export type SheetBus = ReturnType<typeof createSheetBus>;
+type SheetEventMap = typeof sheetContract.events;
 
-export function createSheetBus(options: BusOptions = {}) {
-  return createBus(sheetContract, options);
+export interface SheetBusOptions<E extends EventMap = {}> extends BusOptions {
+  readonly events?: E;
+}
+
+export type SheetBus<E extends EventMap = {}> = EventBus<SheetEventMap & E>;
+
+export function createSheetBus<E extends EventMap = {}>(
+  options: SheetBusOptions<E> = {},
+): SheetBus<E> {
+  const { events, ...busOptions } = options;
+  if (!events) return createBus(sheetContract, busOptions) as SheetBus<E>;
+  for (const name of Object.keys(events)) {
+    if (name in sheetContract.events) {
+      throw new SheetError(`Cannot override contract event "${name}"`, { code: 'PACK_VALIDATION' });
+    }
+  }
+  const contract = defineContract({
+    namespace: sheetContract.namespace,
+    events: { ...sheetContract.events, ...events } as SheetEventMap & E,
+  });
+  return createBus(contract, busOptions);
 }

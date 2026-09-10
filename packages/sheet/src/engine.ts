@@ -5,9 +5,10 @@ import type { FormulaExpr } from '@openvtt/formula';
 import { evaluateRoll } from '@openvtt/dice-core';
 import type { RollExpr } from '@openvtt/dice-core';
 import { fromFormula } from '@openvtt/dice-notation';
-import { characterDocumentSchema, effectDefinitionSchema } from './schema';
+import { characterDocumentSchema, effectDefinitionSchema, expirationStateSchema } from './schema';
 import { computeSheet } from './pipeline';
 import { applyRollTransform } from './roll-transform';
+import { deepFreeze } from './freeze';
 import { diffFlattened, flatten, getPath, setPath } from './paths';
 import { UnknownEffectError, UnknownOrdinalError, UnknownTemplateError } from './errors';
 import { validatePack } from './validate';
@@ -86,6 +87,7 @@ export class SheetEngine {
   private documentData: CharacterDocument;
   private cached: ComputedSheet | undefined;
   private lastSnapshot: Record<string, unknown> = {};
+  private needsEmit = false;
   private handling = false;
   private readonly pendingEvents: Array<{ name: string; payload: unknown }> = [];
   private readonly clockEvent: string | false;
@@ -110,10 +112,6 @@ export class SheetEngine {
   }
 
   get document(): CharacterDocument {
-    return this.snapshot();
-  }
-
-  snapshot(): CharacterDocument {
     return structuredClone(this.documentData);
   }
 
@@ -148,7 +146,9 @@ export class SheetEngine {
   compute(): ComputedSheet {
     if (!this.cached) {
       const entries = this.resolveAll();
-      this.cached = computeSheet(this.documentData.base, entries, this.pack, (s) => this.parse(s));
+      this.cached = deepFreeze(
+        computeSheet(this.documentData.base, entries, this.pack, (s) => this.parse(s)),
+      );
     }
     return this.cached;
   }
@@ -156,15 +156,20 @@ export class SheetEngine {
   applyEffect(refOrDef: string | EffectDefinition, options: ApplyEffectOptions = {}): EffectInstance {
     const definition =
       typeof refOrDef === 'string' ? this.requireDefinition(refOrDef) : refOrDef;
+    const expiresAt = options.expiresAt
+      ? (v.parse(expirationStateSchema, options.expiresAt) as ExpirationState)
+      : definition.duration
+        ? durationToExpiration(definition.duration)
+        : undefined;
     const instance: EffectInstance = {
       id: options.id ?? this.nextId(),
-      ...(typeof refOrDef === 'string' ? { ref: refOrDef } : { inline: definition }),
+      ...(typeof refOrDef === 'string'
+        ? { ref: refOrDef }
+        : { inline: structuredClone(definition) }),
       source: options.source ?? { kind: 'manual' },
       enabled: options.enabled ?? true,
-      ...(options.expiresAt ?? definition.duration
-        ? { expiresAt: options.expiresAt ?? durationToExpiration(definition.duration!) }
-        : {}),
-      ...(options.data ? { data: options.data } : {}),
+      ...(expiresAt ? { expiresAt } : {}),
+      ...(options.data ? { data: structuredClone(options.data) } : {}),
     };
     this.documentData.effects.push(instance);
     this.emitInstance('effect:applied', instance);
@@ -189,7 +194,7 @@ export class SheetEngine {
         source: { kind: 'grant', id: parent.id },
         enabled: true,
         ...(granted.duration ? { expiresAt: durationToExpiration(granted.duration) } : {}),
-        ...(typeof grant === 'object' && grant.data ? { data: grant.data } : {}),
+        ...(typeof grant === 'object' && grant.data ? { data: structuredClone(grant.data) } : {}),
       };
       this.documentData.effects.push(child);
       this.emitInstance('effect:applied', child);
@@ -197,8 +202,9 @@ export class SheetEngine {
     }
   }
 
-  removeEffect(id: string): boolean {
-    if (!this.documentData.effects.some((e) => e.id === id)) return false;
+  removeEffect(id: string): EffectInstance | undefined {
+    const root = this.documentData.effects.find((e) => e.id === id);
+    if (!root) return undefined;
     const ids = this.collectWithGrants([id]);
     const removed: EffectInstance[] = [];
     const effects = this.documentData.effects;
@@ -210,7 +216,7 @@ export class SheetEngine {
     }
     for (const instance of removed) this.emitInstance('effect:removed', instance);
     this.afterMutation();
-    return true;
+    return root;
   }
 
   removeBySource(source: EffectSource): EffectInstance[] {
@@ -302,7 +308,7 @@ export class SheetEngine {
     }
     this.fireTriggers(name, payload);
     this.processDurations(name);
-    this.emitComputed();
+    if (this.needsEmit) this.emitComputed();
   }
 
   tickSeconds(seconds: number): void {
@@ -313,7 +319,7 @@ export class SheetEngine {
     this.documentData = v.parse(characterDocumentSchema, json) as CharacterDocument;
     this.markDirty();
     this.emitComputed();
-    return this.snapshot();
+    return this.document;
   }
 
   updateBase(mutator: (base: Record<string, unknown>) => Record<string, unknown>): void {
@@ -472,6 +478,7 @@ export class SheetEngine {
     const snapshot = flatten(scope);
     const patches: readonly SheetPatch[] = diffFlattened(this.lastSnapshot, snapshot);
     this.lastSnapshot = snapshot;
+    this.needsEmit = false;
     if (patches.length > 0) {
       this.bus?.emit('computed', { patches: [...patches] });
     }
@@ -486,6 +493,7 @@ export class SheetEngine {
 
   private markDirty(): void {
     this.cached = undefined;
+    this.needsEmit = true;
   }
 
   private resolveAll(): ResolvedEffect[] {

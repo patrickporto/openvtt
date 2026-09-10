@@ -57,25 +57,9 @@ export type {
 
 export { applyRollTransform } from './roll-transform';
 
-export {
-  applyChanges,
-  applyDerived,
-  applyStacking,
-  buildConditionEdges,
-  buildConditionNodes,
-  buildState,
-  computeSheet,
-  filterActive,
-  pathsOverlap,
-  sortEffects,
-  topoConditionNodes,
-  topoOrder,
-} from './pipeline';
-export type { ConditionNode, ConditionNodeInput } from './pipeline';
-
 export { getPath, setPath, flatten, diffFlattened } from './paths';
 
 export { validatePack, defineSystemPack } from './validate';
 
 export { createSheetBus, sheetContract } from './bus';
-export type { SheetBus } from './bus';
+export type { SheetBus, SheetBusOptions } from './bus';
