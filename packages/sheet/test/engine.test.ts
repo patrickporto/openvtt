@@ -512,7 +512,7 @@ describe('events & patches', () => {
   });
 
   it('emits effect:expired when a duration ends through the bus (attach)', () => {
-    const bus = createSheetBus();
+    const bus = createSheetBus({ events: { 'turn:end': v.object({}) } });
     const expired: string[] = [];
     bus.on('effect:expired', (p) => expired.push(p.instanceId));
     const { engine } = makeEngine(pack, structuredClone(base), { bus });
@@ -524,7 +524,7 @@ describe('events & patches', () => {
   });
 
   it('does not react to bus events before attach', () => {
-    const bus = createSheetBus();
+    const bus = createSheetBus({ events: { 'turn:end': v.object({}) } });
     const { engine } = makeEngine(pack, structuredClone(base), { bus });
     engine.applyEffect('spell.haste', { id: 'a-001' });
     bus.emit('turn:end', {});
@@ -562,6 +562,48 @@ describe('events & patches', () => {
 });
 
 describe('document & interop', () => {
+  it('returns a frozen computed sheet: external mutation does not corrupt the cache', () => {
+    const { engine } = makeEngine(pack, structuredClone(base));
+    engine.applyEffect('buff.small', { id: 'a-001' });
+    const computed = engine.compute();
+    expect(engine.compute()).toBe(computed);
+    expect(Object.isFrozen(computed)).toBe(true);
+    expect(Object.isFrozen(computed.values)).toBe(true);
+    expect(Object.isFrozen(computed.effects[0])).toBe(true);
+    expect(() => {
+      (computed.values as Record<string, unknown>).score = 999;
+    }).toThrow();
+    expect(engine.compute().values.score).toBe(12);
+  });
+
+  it('does not freeze caller-owned objects (data, inline defs, pack transforms)', () => {
+    const { engine } = makeEngine(pack, structuredClone(base));
+    const data = { bonus: 7 };
+    const inline: EffectDefinition = {
+      id: 'ad-hoc.frozen-check',
+      label: 'Freeze check',
+      changes: [{ kind: 'value', path: 'score', op: 'add', value: '1' }],
+    };
+    engine.applyEffect('param.bonus', { id: 'a-001', data });
+    engine.applyEffect(inline, { id: 'a-002' });
+    engine.applyEffect('roll.advantage', { id: 'a-003' });
+    engine.compute();
+    expect(Object.isFrozen(data)).toBe(false);
+    expect(Object.isFrozen(inline)).toBe(false);
+    const advantage = pack.definitions!.find((d) => d.id === 'roll.advantage')!;
+    expect(Object.isFrozen(advantage)).toBe(false);
+    expect(Object.isFrozen((advantage.changes[0] as { transform?: object }).transform)).toBe(false);
+  });
+
+  it('removeEffect returns the removed instance, or undefined when missing', () => {
+    const { engine } = makeEngine(pack, structuredClone(base));
+    engine.applyEffect('buff.small', { id: 'a-001' });
+    const removed = engine.removeEffect('a-001');
+    expect(removed?.id).toBe('a-001');
+    expect(engine.removeEffect('a-001')).toBeUndefined();
+    expect(engine.compute().values.score).toBe(10);
+  });
+
   it('exposes the document as a snapshot: external mutation does not corrupt the engine', () => {
     const { engine } = makeEngine(pack, structuredClone(base));
     engine.applyEffect('buff.small', { id: 'a-001' });

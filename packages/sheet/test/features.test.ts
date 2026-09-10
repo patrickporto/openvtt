@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'bun:test';
+import * as v from 'valibot';
 import {
   PackValidationError,
   SheetEngine,
+  SheetError,
   createDocument,
   createSheetBus,
+  defineSystemPack,
   validatePack,
 } from '../src';
 import type { SystemPack } from '../src';
@@ -238,7 +241,9 @@ describe('trigger rollInto', () => {
 
 describe('world clock', () => {
   it('ticks second-based durations from clock events on the bus', () => {
-    const bus = createSheetBus();
+    const bus = createSheetBus({
+      events: { 'clock:tick': v.looseObject({ elapsed: v.number() }) },
+    });
     const pack: SystemPack = {
       id: 'clock',
       version: '1.0.0',
@@ -258,6 +263,33 @@ describe('world clock', () => {
     expect(engine.document.effects).toHaveLength(1);
     bus.emit('clock:tick', { elapsed: 31 });
     expect(engine.document.effects).toHaveLength(0);
+  });
+
+  it('emits computed patches when a clock tick expires an effect', () => {
+    const bus = createSheetBus({
+      events: { 'clock:tick': v.looseObject({ elapsed: v.number() }) },
+    });
+    const pack: SystemPack = {
+      id: 'clock',
+      version: '1.0.0',
+      definitions: [
+        {
+          id: 'spell.long',
+          label: 'Long buff',
+          duration: { unit: 'seconds', value: 60 },
+          changes: [{ kind: 'value', path: 'score', op: 'add', value: '1' }],
+        },
+      ],
+    };
+    const patches: string[][] = [];
+    bus.on('computed', (p) => patches.push(p.patches.map((x) => x.path)));
+    const { engine } = makeEngine(pack, { score: 0 }, { bus });
+    engine.attach();
+    engine.applyEffect('spell.long', { id: 'a-001' });
+    patches.length = 0;
+    bus.emit('clock:tick', { elapsed: 61 });
+    expect(engine.document.effects).toHaveLength(0);
+    expect(patches.at(-1)).toEqual(['score']);
   });
 });
 
@@ -296,9 +328,73 @@ describe('hydration', () => {
       }),
     ).toThrow();
   });
+
+  it('round-trips documents produced with a custom uuid-shaped id generator', () => {
+    const pack: SystemPack = {
+      id: 'hydra-custom',
+      version: '1.0.0',
+      definitions: [
+        {
+          id: 'buff',
+          label: 'Buff',
+          changes: [{ kind: 'value', path: 'score', op: 'add', value: '5' }],
+        },
+      ],
+    };
+    const source = makeEngine(pack, { score: 10 });
+    source.engine.applyEffect('buff');
+    const json = JSON.parse(JSON.stringify(source.engine.document));
+
+    const other = makeEngine(pack, { score: 0 });
+    other.engine.loadDocument(json);
+    expect(other.engine.compute().values.score).toBe(15);
+  });
 });
 
 describe('static pack validation', () => {
+  it('rejects durations missing the field required by their unit', () => {
+    const missingValue: SystemPack = {
+      id: 'bad-duration',
+      version: '1.0.0',
+      definitions: [
+        { id: 'a', label: 'a', changes: [], duration: { unit: 'rounds' } },
+      ],
+    };
+    const missingEvent: SystemPack = {
+      id: 'bad-duration',
+      version: '1.0.0',
+      definitions: [
+        { id: 'a', label: 'a', changes: [], duration: { unit: 'until-event' } },
+      ],
+    };
+    expect(() => validatePack(missingValue)).toThrow(PackValidationError);
+    expect(() => validatePack(missingEvent)).toThrow(PackValidationError);
+  });
+
+  it('defineSystemPack is an authoring identity helper', () => {
+    const pack: SystemPack = { id: 'authoring', version: '1.0.0' };
+    expect(defineSystemPack(pack)).toBe(pack);
+  });
+
+  it('rejects invalid expiresAt overrides in applyEffect', () => {
+    const { engine } = makeEngine({ id: 'x', version: '1.0.0' }, {});
+    engine.registerDefinition({
+      id: 'buff',
+      label: 'Buff',
+      changes: [{ kind: 'value', path: 'score', op: 'add', value: '1' }],
+    });
+    expect(() =>
+      engine.applyEffect('buff', { expiresAt: { unit: 'seconds' } }),
+    ).toThrow();
+    expect(() =>
+      engine.applyEffect('buff', { expiresAt: { unit: 'until-event' } }),
+    ).toThrow();
+  });
+
+  it('rejects extra bus events that collide with the sheet contract', () => {
+    expect(() => createSheetBus({ events: { computed: v.object({}) } })).toThrow(SheetError);
+  });
+
   it('rejects grants pointing at unknown effects', () => {
     const pack: SystemPack = {
       id: 'bad-grants',

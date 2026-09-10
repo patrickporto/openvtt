@@ -2,8 +2,10 @@ import { SheetEngine, createDocument } from '../src';
 import type { CharacterDocument, SystemPack } from '../src';
 
 export function makeIds(prefix = 'e'): () => string {
+  const head = [...prefix].reduce((acc, ch) => (acc + ch.charCodeAt(0)) % 0xffffffff, 0);
+  const segment = head.toString(16).padStart(8, '0');
   let n = 0;
-  return () => `${prefix}-${String(++n).padStart(4, '0')}`;
+  return () => `${segment}-0000-7000-8000-${String(++n).padStart(12, '0')}`;
 }
 
 export function makeEngine(
